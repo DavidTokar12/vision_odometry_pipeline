@@ -1,0 +1,40 @@
+{
+  "name": "ml-uv-ruff",
+  "build": {
+    "dockerfile": "Dockerfile"
+  },
+  "postCreateCommand": "uv venv .venv && uv sync --extra dev --extra notebook --extra ml && uv run python -m ipykernel install --user --name ml-uv-ruff --display-name 'Python (ml-uv-ruff)'",
+  "remoteUser": "vscode",
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "ms-python.python",
+        "ms-python.vscode-pylance",
+        "charliermarsh.ruff",
+        "ms-toolsai.jupyter",
+        "streetsidesoftware.code-spell-checker",
+        "yzhang.markdown-all-in-one"
+      ],
+      "settings": {
+        "python.defaultInterpreterPath": "${containerWorkspaceFolder}/.venv/bin/python",
+        "[python]": {
+          "editor.defaultFormatter": "charliermarsh.ruff"
+        },
+        "editor.formatOnSave": true,
+        "editor.codeActionsOnSave": {
+          "source.fixAll.ruff": "always",
+          "source.organizeImports.ruff": "always"
+        },
+        "jupyter.jupyterServerType": "local",
+        "jupyter.kernels.filter": [
+          {
+            "path": "${workspaceFolder}/.venv",
+            "type": "include"
+          }
+        ],
+        "python.testing.pytestEnabled": true,
+        "python.analysis.typeCheckingMode": "off"
+      }
+    }
+  }
+}

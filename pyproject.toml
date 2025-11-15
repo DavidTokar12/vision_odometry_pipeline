@@ -1,0 +1,79 @@
+[project]
+name = "ml-sandbox"
+version = "0.0.1"
+authors = [{ name = "David Tokar", email = "1413david@gmail.com" }]
+description = "Local ML sandbox"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = []
+
+[project.optional-dependencies]
+dev = [
+    "ruff",
+    "pytest"
+]
+
+notebook = [
+    "ipykernel",
+    "jupyterlab"
+]
+
+ml = [
+    "numpy",
+    "pandas",
+    "polars",
+    "scipy",
+    "scikit-learn",
+    "matplotlib",
+    "seaborn",
+    "plotly",
+]
+
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.ruff]
+extend-exclude = []
+fix = true
+line-length = 88
+target-version = "py312"
+
+[tool.ruff.lint]
+extend-select = [
+    "B",    # bugbear
+    "C4",   # comprehensions
+    "ERA",  # eradicate
+    "I",    # isort
+    "N",    # pep8-naming
+    "PIE",  # flake8-pie
+    "PGH",  # pygrep
+    "RUF",  # ruff checks
+    "SIM",  # simplify
+    "TCH",  # type-checking imports
+    "TID",  # tidy-imports
+    "UP"    # pyupgrade
+]
+ignore = [
+    "TC003",
+    "TC001",
+    "TC002",
+    "ERA001"
+]
+extend-safe-fixes = ["TCH"]
+unfixable = []
+
+[tool.ruff.lint.flake8-tidy-imports]
+ban-relative-imports = "all"
+
+[tool.ruff.lint.isort]
+force-single-line = true
+lines-between-types = 1
+lines-after-imports = 2
+known-first-party = ["ml_sandbox"]
