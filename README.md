@@ -1,0 +1,95 @@
+# Vision Odometry Pipeline
+
+## Setup Instructions
+
+### Prerequisites
+
+Before getting started, ensure you have the following installed:
+
+1. **Docker** - [Install Docker](https://docs.docker.com/get-docker/)
+2. **VS Code Dev Containers Extension** - Install the [Dev Containers](https://marketplace.visualstudio.com/items?itemName=ms-vscode-remote.remote-containers) extension from the VS Code marketplace
+
+### Quick Start
+
+1. Clone the repository and open it in VS Code
+2. When prompted, click **"Reopen in Container"** or:
+   - Press `Ctrl+Shift+P` (or `Cmd+Shift+P` on macOS)
+   - Search for and select **"Dev Containers: Reopen in Container"**
+3. Wait for the container to build and open
+
+The development environment will be ready once the container is open.
+
+## Project Tools
+
+### Package Management: uv
+
+This project uses **[uv](https://github.com/astral-sh/uv)** for fast, reliable package management and dependency resolution.
+
+To install dependencies:
+
+```bash
+uv sync
+```
+
+To add a new package:
+
+```bash
+uv add package_name
+```
+
+### Linting & Formatting: Ruff
+
+This project uses **[Ruff](https://github.com/astral-sh/ruff)** for fast Python linting and code formatting.
+
+Check code quality:
+
+```bash
+ruff check .
+```
+
+Auto-fix issues:
+
+```bash
+ruff check . --fix
+```
+
+Format code:
+
+```bash
+ruff format .
+```
+
+Check and format in one command:
+
+```bash
+ruff check . --fix && ruff format .
+```
+
+## Running the Project
+
+The main entry point is `src/vision_odometry_pipeline/main.py`:
+
+```bash
+python src/vision_odometry_pipeline/main.py
+```
+
+For interactive development, you can also use the Jupyter notebook at `src/vision_odometry_pipeline/main.ipynb`.
+
+## Development
+
+When working in the dev container:
+
+1. Install dev dependencies:
+   ```bash
+   uv sync --all-extras
+   ```
+
+2. Run linting and formatting before committing:
+   ```bash
+   ruff check . --fix && ruff format .
+   ```
+
+3. Run tests:
+   ```bash
+   pytest
+   ```

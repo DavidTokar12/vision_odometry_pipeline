@@ -1,9 +1,5 @@
-# Set of essential compilers (gcc, g++) and build tools like make.
 build-essential
-# For compiling Fortran code, used by libraries like SciPy.
 gfortran
-# Development headers for libraries, often a dependency for cryptography, etc.
 libssl-dev
-# For XML/HTML parsing libraries like lxml.
 libxml2-dev
 libxslt1-dev
