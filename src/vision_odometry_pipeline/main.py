@@ -25,7 +25,7 @@ def main():
 
     print(f"Initializing VO Runner... Debug output: {debug_output}")
 
-    runner = VoRunner(K=K, debug=False, debug_output=debug_output)
+    runner = VoRunner(K=K, debug=True, debug_output=debug_output)
     recorder = VoRecorder(output_path=f"{debug_output}/out.mp4") 
     
     last_frame = 598
@@ -54,7 +54,6 @@ def main():
 
         try:
             state = runner.process_frame(image)
-            print(runner.get_trajectory())
             recorder.update(state=state, full_trajectory=runner.get_trajectory())
         except Exception as e:
             print(f"\nCritical Failure at Frame {i}: {e}")
