@@ -1,3 +1,10 @@
+# Project folders
+src/datasets/**/images/**
+
+# Proejct outputs
+vo_live.mp4
+vo_result.png
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[codz]
@@ -214,3 +221,6 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# VSCode
+.vscode/
