@@ -1,5 +1,5 @@
 # Project folders
-src/datasets/**/images/**
+src/datasets/**/images/**.png
 
 # Proejct outputs
 vo_live.mp4
