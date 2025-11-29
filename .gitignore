@@ -1,9 +1,13 @@
 # Project folders
 src/datasets/**/images/**.png
+data/
+debug_output/
 
-# Proejct outputs
+# Project outputs
 vo_live.mp4
 vo_result.png
+
+
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

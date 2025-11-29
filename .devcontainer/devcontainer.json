@@ -3,7 +3,7 @@
   "build": {
     "dockerfile": "Dockerfile"
   },
-  "postCreateCommand": "uv venv .venv && uv sync --extra dev --extra notebook --extra ml && uv run python -m ipykernel install --user --name ml-uv-ruff --display-name 'Python (ml-uv-ruff)'",
+  "postCreateCommand": "uv venv .venv && uv sync --extra dev --extra notebook && uv run python -m ipykernel install --user --name ml-uv-ruff --display-name 'Python (ml-uv-ruff)'",
   "remoteUser": "vscode",
   "customizations": {
     "vscode": {
