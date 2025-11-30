@@ -16,8 +16,16 @@ Before getting started, ensure you have the following installed:
    - Press `Ctrl+Shift+P` (or `Cmd+Shift+P` on macOS)
    - Search for and select **"Dev Containers: Reopen in Container"**
 3. Wait for the container to build and open
+4. Verify the correct interpreter (`.venv`) is selected
 
 The development environment will be ready once the container is open.
+
+### Import Datasets
+1. Download the compressed dataset archive from the course website (https://rpg.ifi.uzh.ch/teaching.html#VAMR) and extract them. 
+2. In `data/`, find the directory of the dataset you want to use and create a new folder called `images` in it.
+3. Copy the images from the extracted archive into the newly created folder.
+   1. For the `parking` dataset, copy the contents from the archive's `images/` directory.
+   2. For the `kitti` dataset, copy the contents of the archive's `05/images_0` directory.
 
 ## Project Tools
 
