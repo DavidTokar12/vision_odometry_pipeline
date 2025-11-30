@@ -12,7 +12,7 @@ import numpy as np
 
 class Config:
     # Paths
-    DATA_DIR = "src/datasets/kitti05_0"
+    DATA_DIR = "data/kitti05_0"
     IMG_DIR = os.path.join(DATA_DIR, "images")
     K_FILE = os.path.join(DATA_DIR, "K.txt")
     POSES_FILE = os.path.join(DATA_DIR, "poses.txt")
@@ -293,8 +293,7 @@ def main():
     est_traj = [gt_poses[0][:3, 3], gt_poses[1][:3, 3]]
     gt_traj = [gt_poses[0][:3, 3], gt_poses[1][:3, 3]]
 
-    # Visuals - this doesn't work with the current docker container
-    # cv2.namedWindow("VO Pipeline", cv2.WINDOW_NORMAL)
+    # Visuals
     traj_bg = np.zeros((800, 800, 3), dtype=np.uint8)
 
     # --- VIDEO WRITER SETUP ---
@@ -307,7 +306,12 @@ def main():
 
     fps = 20.0  # Adjust if video plays too fast/slow
     fourcc = cv2.VideoWriter_fourcc(*"mp4v")
-    video_out = cv2.VideoWriter("vo_live.mp4", fourcc, fps, (total_width, total_height))
+    debug_output = "debug_output/gemini"
+    os.makedirs(debug_output, exist_ok=True)
+
+    video_out = cv2.VideoWriter(
+        f"{debug_output}/vo_gemini_live.mp4", fourcc, fps, (total_width, total_height)
+    )
     # --------------------------
 
     print("Running VO Loop...")
@@ -346,13 +350,10 @@ def main():
         )
         dx_gt, dy_gt = int(gt_pos[0] * scale) + off_x, int(off_y - gt_pos[2] * scale)
 
-        # cv2.circle(traj_bg, (dx_est, dy_est), 1, (0, 255, 0), 1)
-        # cv2.circle(traj_bg, (dx_gt, dy_gt), 1, (0, 0, 255), 1)
-
-        # ... (previous plotting logic) ...
+        cv2.circle(traj_bg, (dx_est, dy_est), 1, (0, 255, 0), 1)
+        cv2.circle(traj_bg, (dx_gt, dy_gt), 1, (0, 0, 255), 1)
 
         # Resize map to match image height (Height = img.shape[0])
-        # Your logic: Width = Height * 2
         map_resized = cv2.resize(traj_bg, (img_disp.shape[0] * 2, img_disp.shape[0]))
 
         # Combine them
@@ -361,13 +362,6 @@ def main():
         # Write to video
         if i % 3 == 0:
             video_out.write(combined_view)
-
-        # Show on screen - this doesn't work in the current docker container.
-        # cv2.imshow("VO Pipeline", combined_view)
-        # if cv2.waitKey(1) == 27:
-        #     break
-
-    cv2.destroyAllWindows()
 
     video_out.release()
     print("Video saved to 'vo_live.mp4'")
@@ -383,7 +377,7 @@ def main():
     plt.legend()
     plt.axis("equal")
     plt.grid()
-    plt.savefig("vo_result.png")
+    plt.savefig(f"{debug_output}/vo_gemini_result.png")
     plt.show()
 
 

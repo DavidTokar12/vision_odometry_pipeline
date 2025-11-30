@@ -11,7 +11,7 @@ from vision_odometry_pipeline.vo_runner import VoRunner
 
 def main():
     parking_path = "/workspaces/vision_odometry_pipeline/data/parking"
-    debug_output = "/workspaces/vision_odometry_pipeline/debug_output"
+    debug_output = "/workspaces/vision_odometry_pipeline/debug_output/main/"
 
     assert os.path.exists(parking_path), f"Dataset path not found: {parking_path}"
 
