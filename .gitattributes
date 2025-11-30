@@ -1,0 +1,4 @@
+# .gitattributes
+
+# Make all files to build the docker image use LF line endings
+.devcontainer/** text eol=lf
