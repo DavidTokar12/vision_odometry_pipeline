@@ -12,7 +12,7 @@ import numpy as np
 
 class Config:
     # Paths
-    DATA_DIR = "data/kitti05_0"
+    DATA_DIR = "data/malaga"
     IMG_DIR = os.path.join(DATA_DIR, "images")
     K_FILE = os.path.join(DATA_DIR, "K.txt")
     POSES_FILE = os.path.join(DATA_DIR, "poses.txt")
@@ -116,36 +116,79 @@ class VisualOdometry:
         pts4d = cv2.triangulatePoints(P1, P2, pts1_t, pts2_t)
         return (pts4d[:3] / pts4d[3]).T
 
-    def process_initialization(self, img0, img1, T0_wc, T1_wc):
+    def process_initialization(self, img0, img1, gt_pos0, gt_pos1):
         """
-        Input: GT Poses T_WC (Camera Position).
-        Action: Invert them to T_CW for triangulation logic.
+        Robust Initialization:
+        1. Calculates visual pose (Essential Matrix) to ensure rays intersect.
+        2. Uses GT only to scale the result to meters.
         """
-        # 1. Convert GT (Position) to Projection Matrix (Extrinsics)
-        T0_cw = inv_pose(T0_wc)
-        T1_cw = inv_pose(T1_wc)
-
-        # 2. Detect & Track
+        # 1. Detect & Track
         p0 = self.feature_detection(img0)
         p1, status, err = cv2.calcOpticalFlowPyrLK(
             img0, img1, p0, None, **Config.LK_PARAMS
         )
 
+        # Filter Good Points
         good_mask = status.flatten() == 1
         p0_good = p0[good_mask]
         p1_good = p1[good_mask]
 
-        # 3. Triangulate (using T_CW)
+        if len(p0_good) < 100:
+            print("  [Init] Failed: Not enough features.")
+            return False
+
+        # 2. Compute Relative Pose Visually (The Truth for the Camera)
+        # This calculates the rotation and direction from pixels, ignoring potentially bad GT orientation
+        E, mask = cv2.findEssentialMat(
+            p1_good, p0_good, self.K, method=cv2.RANSAC, prob=0.999, threshold=1.0
+        )
+        _, R, t, mask = cv2.recoverPose(E, p1_good, p0_good, self.K)
+
+        # 3. Calculate Scale from Ground Truth
+        # Distance = norm(Pos1 - Pos0)
+        baseline = np.linalg.norm(gt_pos1 - gt_pos0)
+
+        if baseline < 0.5:  # SAFETY CHECK
+            print(
+                f"  [Init] Failed: Baseline too small ({baseline:.2f}m). Car hasn't moved!"
+            )
+            return False
+
+        # Apply scale to the unit translation vector
+        t = t * baseline
+
+        # 4. Create Projection Matrices for Triangulation
+        # Camera 0 is at World Origin (Identity)
+        T0_cw = np.eye(4)[:3, :]
+        # Camera 1 is relative to Camera 0
+        T1_cw = np.hstack((R, t))
+
+        # 5. Triangulate
         landmarks = self.triangulation(T0_cw, T1_cw, p0_good, p1_good)
 
-        # Init State
-        self.px_ref = p1_good
-        self.landmarks = landmarks
-        self.cur_pose_cw = T1_cw  # Store T_CW
-        self.prev_img = img1
+        # 6. Sanity Check Triangulation
+        # Remove points that are 0, behind camera, or too far
+        mask_tri = mask.flatten() == 255
+        landmarks = landmarks[mask_tri]
+        p1_good = p1_good[mask_tri]
 
-        self._detect_new_candidates(img1, T1_cw)
-        print(f"Initialized with {len(self.landmarks)} landmarks.")
+        # Check Z (Depth)
+        # Transform points to Camera 1 frame to check depth
+        pts_cam1 = (R @ landmarks.T).T + t.T
+        valid_depth = (pts_cam1[:, 2] > 0.5) & (pts_cam1[:, 2] < 500)
+
+        self.landmarks = landmarks[valid_depth]
+        self.px_ref = p1_good[valid_depth]
+
+        # Initialize State
+        self.cur_pose_cw = T1_cw
+        self.prev_img = img1
+        self._detect_new_candidates(img1, T1_cw)  # Fill up features
+
+        print(
+            f"  [Init] Success! {len(self.landmarks)} landmarks created. Baseline: {baseline:.2f}m"
+        )
+        return True
 
     def process_frame(self, img):
         """
@@ -162,6 +205,7 @@ class VisualOdometry:
         landmarks_good = self.landmarks[good_mask]
 
         if len(p1_good) < 20:
+            print(f"ERROR: len(p1_good) = {len(p1_good)}")
             return None
 
         # 2. Pose Estimation (PnP returns T_CW)
@@ -170,12 +214,15 @@ class VisualOdometry:
             p1_good,
             self.K,
             None,
-            iterationsCount=100,
-            reprojectionError=2.0,
+            iterationsCount=100,  # 100
+            reprojectionError=2.0,  # 2.0
             confidence=0.99,
         )
 
         if not success or inliers is None:
+            print(
+                f"ERROR: success (should be True) = {success}, Inliers (should not be None) = {inliers}"
+            )
             return None
 
         R, _ = cv2.Rodrigues(rvec)
@@ -273,7 +320,12 @@ def main():
         K = load_calib(Config.K_FILE)
         gt_poses = load_poses(Config.POSES_FILE)  # These are T_WC
         images = sorted(
-            [img for img in os.listdir(Config.IMG_DIR) if img.endswith(".png")]
+            [
+                img
+                for img in os.listdir(Config.IMG_DIR)
+                if img.endswith((".png", ".jpg"))
+                and not img.endswith(("right.png", "right.jpg"))
+            ]
         )
     except Exception as e:
         print(f"[Error] {e}")
@@ -284,14 +336,42 @@ def main():
 
     # Init
     img0 = cv2.imread(os.path.join(Config.IMG_DIR, images[0]), cv2.IMREAD_GRAYSCALE)
-    img1 = cv2.imread(os.path.join(Config.IMG_DIR, images[1]), cv2.IMREAD_GRAYSCALE)
+    # We keep Frame 0 as the "Anchor" and try to match it with Frame 1, 2, 3...
+    # until we find enough movement.
+    img0 = cv2.imread(os.path.join(Config.IMG_DIR, images[0]), cv2.IMREAD_GRAYSCALE)
+    gt_pos0 = gt_poses[0][:3, 3]  # XYZ position
 
-    # T0, T1 are GT (T_WC). Passed directly to process_initialization, which now inverts them.
-    vo.process_initialization(img0, img1, gt_poses[0], gt_poses[1])
+    start_index = 0
 
-    # Store Trajectories (Position only)
-    est_traj = [gt_poses[0][:3, 3], gt_poses[1][:3, 3]]
-    gt_traj = [gt_poses[0][:3, 3], gt_poses[1][:3, 3]]
+    for i in range(1, len(images)):
+        img_curr = cv2.imread(
+            os.path.join(Config.IMG_DIR, images[i]), cv2.IMREAD_GRAYSCALE
+        )
+        gt_pos_curr = gt_poses[i][:3, 3]
+
+        dist = np.linalg.norm(gt_pos_curr - gt_pos0)
+
+        # Try to initialize if distance > 0.5 meters
+        if dist > 0.5:
+            print(f"Attempting initialization at Frame {i} (Dist: {dist:.2f}m)...")
+
+            # Pass just the positions (XYZ), not the full pose matrices
+            if vo.process_initialization(img0, img_curr, gt_pos0, gt_pos_curr):
+                start_index = i
+                break
+        else:
+            print(f"Skipping Frame {i}: Dist {dist:.2f}m (Too small)")
+
+    if start_index == 0:
+        print("Error: Could not initialize (Vehicle never moved?)")
+        return
+
+    # --- TRACKING LOOP ---
+    print(f"\n--- TRACKING STARTED from Frame {start_index} ---")
+
+    # Fill trajectory with static copies for the skipped frames (for plotting alignment)
+    est_traj = [gt_pos0] * start_index
+    gt_traj = [gt_poses[k][:3, 3] for k in range(start_index)]
 
     # Visuals
     traj_bg = np.zeros((800, 800, 3), dtype=np.uint8)
@@ -315,15 +395,16 @@ def main():
     # --------------------------
 
     print("Running VO Loop...")
-    for i in range(2, len(images)):
+    for i in range(start_index + 1, len(images)):
         img = cv2.imread(os.path.join(Config.IMG_DIR, images[i]), cv2.IMREAD_GRAYSCALE)
 
         # process_frame now returns T_WC (Camera Position)
         T_WC_est = vo.process_frame(img)
 
         if T_WC_est is None:
-            print("Tracking failed.")
-            break
+            T_WC_est = np.zeros((4, 4))
+            print(f"Tracking failed after {i} frames.")
+            # break
 
         est_pos = T_WC_est[:3, 3]
         gt_pos = gt_poses[i][:3, 3]
