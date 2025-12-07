@@ -30,14 +30,14 @@ class PoseEstimationStep(VoStep):
 
         # 2. P3P RANSAC
         success, rvec, tvec, inliers = cv2.solvePnPRansac(
-            state.X,
-            state.P,
+            state.X,  # Triangulated 3D Landmarks
+            state.P,  # Tracked 2D Keypoints
             self.K,
-            None,
+            None,  # No distorsion
             iterationsCount=100,
             reprojectionError=2.0,
             confidence=0.99,
-            flags=cv2.SOLVEPNP_P3P,
+            flags=cv2.SOLVEPNP_P3P,  # use P3P, need 4 points
         )
 
         new_pose = state.pose.copy()
@@ -45,16 +45,20 @@ class PoseEstimationStep(VoStep):
         # 3. Filter Outliers (Logic Moved Here)
         # -------------------------------------
         if success:
+            # Convert vector to 3x3 matrix
             R, _ = cv2.Rodrigues(rvec)
-            T_CW = np.eye(4)
-            T_CW[:3, :3] = R
-            T_CW[:3, 3] = tvec.flatten()
-            new_pose = np.linalg.inv(T_CW)
+
+            # world to camera transform
+            T_WC = np.eye(4)
+            T_WC[:3, :3] = R
+            T_WC[:3, 3] = tvec.flatten()
+
+            new_pose = T_WC
 
             if inliers is not None:
                 mask = inliers.flatten()
-                final_P = state.P[mask]
-                final_X = state.X[mask]
+                final_P = state.P[mask]  # Keep only inlier 2D points
+                final_X = state.X[mask]  # Keep only inlier 3D points
             else:
                 final_P = state.P
                 final_X = state.X
