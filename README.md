@@ -26,6 +26,11 @@ The development environment will be ready once the container is open.
 3. Copy the images from the extracted archive into the newly created folder.
    1. For the `parking` dataset, copy the contents from the archive's `images/` directory.
    2. For the `kitti` dataset, copy the contents of the archive's `05/images_0` directory.
+   3. For the `malaga` dataset, copy the contents of the archive's `Images/` directory. The 
+
+### Shortcomings
+The following point may be problematic for a more general VO pipeline as they are currently implemented in a very basic way:
+- Parameters for the PNP/Ransac and the KTL functions were determined by trial and error to work with the provided datasets.
 
 ## Project Tools
 
