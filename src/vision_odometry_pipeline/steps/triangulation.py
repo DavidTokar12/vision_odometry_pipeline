@@ -33,17 +33,21 @@ class TriangulationStep(VoStep):
             return state.P, state.X, state.C, state.F, state.T_first, None
 
         # --- Math Logic (Same as before) ---
+        # Unit normalized first image coordinates
         rays_first_cam = np.ones((len(state.C), 3), dtype=np.float32)
         rays_first_cam[:, 0] = (state.F[:, 0] - self.cx) / self.fx
         rays_first_cam[:, 1] = (state.F[:, 1] - self.cy) / self.fy
 
+        # Unit normalized current image coordinates
         rays_curr_cam = np.ones((len(state.C), 3), dtype=np.float32)
         rays_curr_cam[:, 0] = (state.C[:, 0] - self.cx) / self.fx
         rays_curr_cam[:, 1] = (state.C[:, 1] - self.cy) / self.fy
 
+        # Normalize to unit vector
         rays_first_cam /= np.linalg.norm(rays_first_cam, axis=1, keepdims=True)
         rays_curr_cam /= np.linalg.norm(rays_curr_cam, axis=1, keepdims=True)
 
+        # Transform to world frame
         T_first_all = state.T_first.reshape(-1, 3, 4)
         R_first_all = T_first_all[:, :3, :3]
         R_curr = state.pose[:3, :3]
@@ -51,8 +55,8 @@ class TriangulationStep(VoStep):
         rays_first_world = np.einsum("nij,nj->ni", R_first_all, rays_first_cam)
         rays_curr_world = rays_curr_cam @ R_curr.T
 
+        # Compute angle between rays and create selection mask
         dot_products = np.sum(rays_first_world * rays_curr_world, axis=1)
-        dot_products = np.clip(dot_products, -1.0, 1.0)
         ready_mask = dot_products < self.min_angle_cos
 
         # --- Triangulation Loop ---
@@ -60,23 +64,38 @@ class TriangulationStep(VoStep):
         indices = np.where(ready_mask)[0]
 
         if len(indices) > 0:
+            # P for current image
             T_WC_curr = state.pose
             R_CW_curr = T_WC_curr[:3, :3].T
             t_CW_curr = -R_CW_curr @ T_WC_curr[:3, 3]
             P2 = self.K @ np.hstack((R_CW_curr, t_CW_curr.reshape(3, 1)))
 
+            # P for first image
             for idx in indices:
                 T_WC_first = T_first_all[idx]
                 R_CW_first = T_WC_first[:3, :3].T
                 t_CW_first = -R_CW_first @ T_WC_first[:3, 3]
                 P1 = self.K @ np.hstack((R_CW_first, t_CW_first.reshape(3, 1)))
 
+                # first observation pixel coords and candidate 2D keypoint, triangulate
                 pt1 = state.F[idx].reshape(2, 1)
                 pt2 = state.C[idx].reshape(2, 1)
                 point_4d = cv2.triangulatePoints(P1, P2, pt1, pt2)
-                X = point_4d[:3] / point_4d[3]
 
-                new_X_list.append(X.flatten())
+                # Filter points at infinity
+                if abs(point_4d[3]) < 1e-6:
+                    continue
+
+                # homogeneous coordinate of the candidate 3D landmark
+                X = (point_4d[:3] / point_4d[3].flatten()).flatten()
+
+                # Cheirality check (Is point in front of camera?)
+                X_local = R_CW_curr @ X + t_CW_curr.flatten()
+                # Discard point if it is behind the camera
+                if X_local[2] <= 0:
+                    continue
+
+                new_X_list.append(X)
                 new_P_list.append(state.C[idx])
 
         # --- Data Mutation (Logic Moved Here) ---
