@@ -1,6 +1,5 @@
 import cv2
 
-
 def create_undistorted_maps(K, D, image_size):
     """
     Generate lookup maps to remove image distortion.
