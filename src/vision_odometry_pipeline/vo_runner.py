@@ -97,7 +97,7 @@ class VoRunner:
         self._save_debug(current_debug_dir, "02_Tracking", vis_track)
 
         # ---------------------------------------------------------
-        # STEP 3: Pose Estimation (PnP + RANSAC)
+        # STEP 3: Pose Estimation (P3P + RANSAC)
         # ---------------------------------------------------------
         t0 = time.perf_counter()
         # Returns: (New Pose, Inlier P, Inlier X, Vis)

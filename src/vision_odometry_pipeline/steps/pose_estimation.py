@@ -47,12 +47,12 @@ class PoseEstimationStep(VoStep):
         if success:
             # Convert vector to 3x3 matrix
             R, _ = cv2.Rodrigues(rvec)
-
             # world to camera transform
-            T_WC = np.eye(4)
-            T_WC[:3, :3] = R
-            T_WC[:3, 3] = tvec.flatten()
-
+            T_CW = np.eye(4)
+            T_CW[:3, :3] = R
+            T_CW[:3, 3] = tvec.flatten()
+            # camera to world transform
+            T_WC = np.linalg.inv(T_CW)
             new_pose = T_WC
 
             if inliers is not None:
