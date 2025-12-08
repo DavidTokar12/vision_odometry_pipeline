@@ -124,7 +124,7 @@ class InitializationStep:
         state.landmarks = pts3D
         state.X = pts3D
         state.C = pts2
-        state.F = pts1 #first observation pixel coordinates
+        state.F = pts1  # first observation pixel coordinates
         state.initial_keypoints = pts1
         state.current_keypoints = pts2
         state.is_initialized = True
@@ -137,7 +137,8 @@ class InitializationStep:
             # We visualize on the FIRST frame to show the flow vectors from start to end
             debug_img = self._create_debug_vis(state.frame_buffer[0], pts1, pts2)
 
-        return current_image, debug_img
+        status = False  # Set to True, if pose is estimated
+        return current_image, debug_img, status
 
     # --- Internal Helpers ---
 
@@ -171,21 +172,21 @@ class InitializationStep:
         pts_homo = cv2.triangulatePoints(P1, P2, pts1.T, pts2.T)
         return (pts_homo / pts_homo[3])[:3].T
 
-    def _create_debug_vis(self, img_bg, pts_start, pts_end):
-        """Draws vectors from initial position to current position."""
-        # Ensure we have a writable color image
-        vis = (
-            cv2.cvtColor(img_bg, cv2.COLOR_GRAY2BGR)
-            if img_bg.ndim == 2
-            else img_bg.copy()
-        )
+        # def _create_debug_vis(self, img_bg, pts_start, pts_end):
+        #     """Draws vectors from initial position to current position."""
+        #     # Ensure we have a writable color image
+        #     vis = (
+        #         cv2.cvtColor(img_bg, cv2.COLOR_GRAY2BGR)
+        #         if img_bg.ndim == 2
+        #         else img_bg.copy()
+        #     )
 
-        for pt_s, pt_e in zip(pts_start, pts_end):
-            x0, y0 = map(int, pt_s.ravel())
-            x1, y1 = map(int, pt_e.ravel())
+        #     for pt_s, pt_e in zip(pts_start, pts_end):
+        #         x0, y0 = map(int, pt_s.ravel())
+        #         x1, y1 = map(int, pt_e.ravel())
 
-            cv2.line(vis, (x0, y0), (x1, y1), (0, 255, 0), 1)  # Green path
-            cv2.circle(vis, (x0, y0), 2, (0, 0, 255), -1)  # Red start
-            cv2.circle(vis, (x1, y1), 3, (255, 0, 0), -1)  # Blue end
+        #         cv2.line(vis, (x0, y0), (x1, y1), (0, 255, 0), 1)  # Green path
+        #         cv2.circle(vis, (x0, y0), 2, (0, 0, 255), -1)  # Red start
+        #         cv2.circle(vis, (x1, y1), 3, (255, 0, 0), -1)  # Blue end
 
         return vis

@@ -1,35 +1,34 @@
 from __future__ import annotations
+
 import cv2
 import numpy as np
+
 from vision_odometry_pipeline.vo_state import VoState
 from vision_odometry_pipeline.vo_step import VoStep
 
+
 class ImagePreprocessingStep(VoStep):
-    def __init__(self) -> None:
+    def __init__(self, map_x: np.ndarray, map_y: np.ndarray, roi) -> None:
         super().__init__("ImagePreprocessing")
+        self.map_x = map_x
+        self.map_y = map_y
+        self.roi = roi
 
     def process(
         self, state: VoState, debug: bool
     ) -> tuple[np.ndarray, np.ndarray | None]:
-        
-        # 1. Validation: Ensure maps exist
-        if state.map_x is None or state.roi is None:
-            raise RuntimeError("Undistortion maps not initialized in VoState!")
-
-        # 2. Get current raw image
         img = state.image_buffer.curr
-        
-        # 3. Convert to grayscale
+
         gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY) if img.ndim == 3 else img
+        gray_undistorted = cv2.remap(
+            gray, self.map_x, self.map_y, interpolation=cv2.INTER_LINEAR
+        )
 
-        # 4. Undistort using pre-computed maps (Fast)
-        gray_undistorted = cv2.remap(gray, state.map_x, state.map_y, interpolation=cv2.INTER_LINEAR)
-        
-        # 5. Crop ROI
-        x, y, w, h = state.roi
-        gray_undistorted = gray_undistorted[y:y+h, x:x+w]
+        # Crop ROI
+        x, y, w, h = self.roi
+        gray_undistorted = gray_undistorted[y : y + h, x : x + w]
 
-        # 6. Optional: Equalize Hist
+        # Optional: Equalize Hist
         # if True: gray_undistorted = cv2.equalizeHist(gray_undistorted)
 
         if debug:

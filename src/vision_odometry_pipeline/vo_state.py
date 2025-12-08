@@ -67,3 +67,5 @@ class VoState:
     pose: np.ndarray = field(default_factory=lambda: np.eye(4, dtype=np.float64))
 
     frame_id: int = 0
+
+    is_initialized: int = 0

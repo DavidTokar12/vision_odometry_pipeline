@@ -23,6 +23,14 @@ def main():
 
     print(f"Loaded Camera Matrix K:\n{K}")
 
+    d_path = os.path.join(parking_path, "D.txt")
+    if os.path.exists(d_path):
+        D = np.loadtxt(d_path, delimiter=",")
+        print(f"Loaded Distortion Vector:\n{D}")
+    else:
+        print("Warning: D.txt not found. Assuming zero distortion.")
+        D = np.zeros(5)
+
     print(f"Initializing VO Runner... Debug output: {debug_output}")
 
     runner = VoRunner(K=K, debug=True, debug_output=debug_output)
