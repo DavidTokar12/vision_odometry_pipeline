@@ -16,19 +16,6 @@ class InitializationConfig:
     min_inliers: int = 8
 
 
-# --- Placeholder for VoState (Reference) ---
-class VoState:
-    frame_buffer: list[np.ndarray]
-    K: np.ndarray
-    # D is likely unused here if images are already undistorted
-    is_initialized: bool
-    R: np.ndarray
-    t: np.ndarray
-    landmarks: np.ndarray
-    initial_keypoints: np.ndarray
-    current_keypoints: np.ndarray
-
-
 class InitializationStep:
     def __init__(self, config: InitializationConfig = InitializationConfig()):
         self.config = config
@@ -49,7 +36,7 @@ class InitializationStep:
 
         # 2. Setup
         # We assume state.K matches the resolution/distortion of the images in frame_buffer
-        K = np.array(state.K, dtype=np.float32)
+        K = np.array(state.calibration_matrix, dtype=np.float32)
 
         # Ensure images are grayscale for Feature Detectors
         # We create a local list of grayscale views to avoid modifying state.frame_buffer in place
@@ -130,7 +117,14 @@ class InitializationStep:
         # 7. Update State
         state.R = R
         state.t = t
+        T_current = np.eye(4, dtype=np.float64)
+        T_current[:3, :3] = R
+        T_current[:3, 3] = t.ravel()
+        state.pose = T_current
         state.landmarks = pts3D
+        state.X = pts3D
+        state.C = pts2
+        state.F = pts1 #first observation pixel coordinates
         state.initial_keypoints = pts1
         state.current_keypoints = pts2
         state.is_initialized = True

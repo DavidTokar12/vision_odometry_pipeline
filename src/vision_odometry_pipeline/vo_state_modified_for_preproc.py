@@ -74,4 +74,14 @@ class VoState:
 
     # This is the NEW camera matrix corresponding to the undistorted/cropped image
     # Crucial: All downstream steps (Initialization, Tracking) must use THIS K, not the original K.
-    calibration_matrix: np.ndarray | None = None
+    K: np.ndarray | None = None
+
+    # --- ADDITIONAL DATA FOR INITIALIZATION STEP ONLY ---
+    frame_buffer: list[np.ndarray]
+    # D is likely unused here if images are already undistorted
+    is_initialized: bool
+    R: np.ndarray
+    t: np.ndarray
+    landmarks: np.ndarray
+    initial_keypoints: np.ndarray
+    current_keypoints: np.ndarray
