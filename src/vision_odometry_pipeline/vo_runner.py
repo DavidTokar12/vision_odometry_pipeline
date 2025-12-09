@@ -71,11 +71,13 @@ class VoRunner:
             self._state.image_buffer._buffer[-1] = gray_img
 
             # --- Find initial SIFT features and update state ---
-            # TODO: check what is returned, might be related to candidates.
-            first_P = self.pipeline_initialization.find_initial_features(self._state)
-            self._state.pipline_init_stage = replace(
-                self._state, is_initialized=1, P=first_P
+            new_C, new_F, new_T = self.pipeline_initialization.find_initial_features(
+                self._state
             )
+            self._state = replace(
+                self._state, C=new_C, F=new_F, T_first=new_T, pipline_init_stage=1
+            )
+            print("Frame 0 initialized.")
 
         elif self._state.pipline_init_stage == 1:
             # --- Preprocess Image ---
@@ -83,12 +85,25 @@ class VoRunner:
             gray_img, vis_pre = self.preproc.process(self._state, self._debug)
             self._state.image_buffer._buffer[-1] = gray_img
 
-            # TODO: Complete this function, udpate state
-            status = self.intial_pose_finding.process(self._state, self._debug)
+            # --- Find initial pose and landmarks, update state ---
+            new_C, new_F, new_T, new_X, new_P, new_pose, status = (
+                self.pipeline_initialization.process(self._state, self._debug)
+            )
 
-            # if initial pose is found, do:
-            if status == True:
-                self._state = replace(self._state, is_initialized=2)
+            if status:
+                self._state = replace(
+                    self._state,
+                    P=new_P,
+                    X=new_X,
+                    C=new_C,
+                    F=new_F,
+                    T_first=new_T,
+                    pose=new_pose,
+                    pipline_init_stage=2,
+                )
+                print(f"Pipeline initialized after {self._frame_idx} frames.")
+            else:
+                self._state = replace(self._state, C=new_C, F=new_F, T_first=new_T)
 
         else:
             t_total_start = time.perf_counter()
@@ -186,7 +201,7 @@ class VoRunner:
             self._trajectory.append(self._state.pose.copy())
             self._frame_idx += 1
 
-            return self._state
+        return self._state
 
     def get_trajectory(self) -> np.ndarray:
         return np.array(self._trajectory)

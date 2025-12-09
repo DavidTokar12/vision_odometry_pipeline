@@ -33,7 +33,7 @@ def main():
 
     print(f"Initializing VO Runner... Debug output: {debug_output}")
 
-    runner = VoRunner(K=K, debug=True, debug_output=debug_output)
+    runner = VoRunner(K=K, D=D, debug=True, debug_output=debug_output)
     recorder = VoRecorder(output_path=f"{debug_output}/out.mp4")
 
     last_frame = 598
