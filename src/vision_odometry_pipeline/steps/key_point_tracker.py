@@ -40,9 +40,10 @@ class KeypointTrackingStep(VoStep):
         st_p = np.empty((0,), dtype=np.uint8)
 
         if len(p0) > 0:
-            p1, st_p, _ = cv2.calcOpticalFlowPyrLK(
-                img_prev, img_curr, p0, None, **self.lk_params
-            )
+            # p1, st_p, _ = cv2.calcOpticalFlowPyrLK(
+            #     img_prev, img_curr, p0, None, **self.lk_params
+            # )
+            p1, st_p = self._track_features_bidirectional(img_prev, img_curr, p0)
             st_p = st_p.reshape(-1)
 
         # 2. Track Candidate Keypoints (C)
@@ -51,9 +52,10 @@ class KeypointTrackingStep(VoStep):
         st_c = np.empty((0,), dtype=np.uint8)
 
         if len(c0) > 0:
-            c1, st_c, _ = cv2.calcOpticalFlowPyrLK(
-                img_prev, img_curr, c0, None, **self.lk_params
-            )
+            # c1, st_c, _ = cv2.calcOpticalFlowPyrLK(
+            #     img_prev, img_curr, c0, None, **self.lk_params
+            # )
+            c1, st_c = self._track_features_bidirectional(img_prev, img_curr, c0)
             st_c = st_c.reshape(-1)
 
         # 3. Filter Data
@@ -118,3 +120,24 @@ class KeypointTrackingStep(VoStep):
                     )
 
         return vis
+
+    def _track_features_bidirectional(self, img0, img1, p0):
+        lk_params = dict(
+            winSize=(15, 15),
+            maxLevel=3,
+            criteria=(cv2.TERM_CRITERIA_EPS | cv2.TERM_CRITERIA_COUNT, 30, 0.01),
+        )
+        # Forward flow
+        p1, st1, err1 = cv2.calcOpticalFlowPyrLK(img0, img1, p0, None, **lk_params)
+        # Backward flow
+        p0r, st2, err2 = cv2.calcOpticalFlowPyrLK(img1, img0, p1, None, **lk_params)
+
+        # Check consistency (L-infinity norm)
+        dist = abs(p0 - p0r).reshape(-1, 2).max(-1)
+        good_mask = (
+            (st1.flatten() == 1)
+            & (st2.flatten() == 1)
+            & (dist < 1.0)  # this was in the config file
+        )
+
+        return p1, good_mask

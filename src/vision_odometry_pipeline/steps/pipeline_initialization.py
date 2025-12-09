@@ -33,11 +33,9 @@ class PipelineInitialization(VoStep):
         img_prev = state.image_buffer.prev
         img_curr = state.image_buffer.curr
 
-        # Track Keypoints (TODO: Consider changing to bidirectional tracking)
+        # Track Keypoints
         p0 = state.C.astype(np.float32)
-        p1, st, err = cv2.calcOpticalFlowPyrLK(
-            img_prev, img_curr, p0, None, winSize=(21, 21), maxLevel=3
-        )
+        p1, st = self._track_features_bidirectional(img_prev, img_curr, p0)
         p1 = p1.reshape(-1, 2)
 
         # Update Candidates
@@ -48,8 +46,11 @@ class PipelineInitialization(VoStep):
 
         # Check if points have moved enough
         displacements = np.linalg.norm(new_C - new_F, axis=1)
+        displacements.sort()
+        displacements = displacements[-30:]
+
         avg_parallax = np.mean(displacements) if len(displacements) > 0 else 0.0
-        if avg_parallax < 30.0:
+        if avg_parallax < 20.0:
             return new_C, new_F, new_T, None, None, None, False
 
         # Compute Essential Matrix (between First Obs F and Current C)
@@ -125,7 +126,7 @@ class PipelineInitialization(VoStep):
             [kp.pt for kp in sift_keypoints], dtype=np.float32
         ).reshape(-1, 2)
 
-        if len(keypoints) < 20:  # TODO: Adjust this threshold
+        if len(keypoints) < 15:  # TODO: Adjust this threshold
             print("Warning: Low feature count in initialization frame")
 
         identity_pose_flat = np.hstack((np.eye(3), np.zeros((3, 1)))).flatten()
@@ -166,3 +167,24 @@ class PipelineInitialization(VoStep):
         )
 
         return map_x, map_y, roi, self.optimal_K
+
+    def _track_features_bidirectional(self, img0, img1, p0):
+        lk_params = dict(
+            winSize=self.config.lk_win_size,
+            maxLevel=self.config.lk_max_level,
+            criteria=(cv2.TERM_CRITERIA_EPS | cv2.TERM_CRITERIA_COUNT, 30, 0.01),
+        )
+        # Forward flow
+        p1, st1, err1 = cv2.calcOpticalFlowPyrLK(img0, img1, p0, None, **lk_params)
+        # Backward flow
+        p0r, st2, err2 = cv2.calcOpticalFlowPyrLK(img1, img0, p1, None, **lk_params)
+
+        # Check consistency (L-infinity norm)
+        dist = abs(p0 - p0r).reshape(-1, 2).max(-1)
+        good_mask = (
+            (st1.flatten() == 1)
+            & (st2.flatten() == 1)
+            & (dist < self.config.fb_max_dist)
+        )
+
+        return p1, good_mask

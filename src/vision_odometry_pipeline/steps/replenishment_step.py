@@ -33,29 +33,44 @@ class ReplenishmentStep(VoStep):
 
         # 2. Detection
         n_needed = self.max_features - len(all_pts)
-        new_candidates = np.empty((0, 2))
 
-        if n_needed > 0:
-            pts = cv2.goodFeaturesToTrack(
-                curr_img,
-                mask=mask,
-                maxCorners=n_needed,
-                qualityLevel=0.01,
-                minDistance=self.min_dist,
-            )
-            if pts is not None:
-                new_candidates = pts.reshape(-1, 2)
+        if not n_needed:
+            return state.C, state.F, state.T_first, None
+
+        # Feature Detection (SIFT on the FIRST frame of the buffer)
+        sift = cv2.SIFT_create()
+        sift_keypoints = sift.detect(curr_img, mask)
+
+        keypoints = np.array(
+            [kp.pt for kp in sift_keypoints], dtype=np.float32
+        ).reshape(-1, 2)
+        if len(keypoints) > n_needed:
+            keypoints = keypoints[:n_needed]
+
+        # identity_pose_flat = np.hstack((np.eye(3), np.zeros((3, 1)))).flatten()
+        # T_first_init = np.tile(identity_pose_flat, (len(keypoints), 1))
+
+        # if n_needed > 0:
+        #     pts = cv2.goodFeaturesToTrack(
+        #         curr_img,
+        #         mask=mask,
+        #         maxCorners=n_needed,
+        #         qualityLevel=0.01,
+        #         minDistance=self.min_dist,
+        #     )
+        #     if pts is not None:
+        #         new_candidates = pts.reshape(-1, 2)
 
         # 3. Data Stacking (Logic Moved Here)
         # -----------------------------------
-        if len(new_candidates) > 0:
-            full_C = np.vstack([state.C, new_candidates])
-            full_F = np.vstack([state.F, new_candidates])  # F is current pixel loc
+        if len(keypoints) > 0:
+            full_C = np.vstack([state.C, keypoints])
+            full_F = np.vstack([state.F, keypoints])  # F is current pixel loc
 
             # Tile the current pose for the new candidates
             # Assuming state.pose is 4x4, we flatten the top 3x4 (R|t) to 12
             pose_3x4 = state.pose[:3, :].flatten()
-            tiled_poses = np.tile(pose_3x4, (len(new_candidates), 1))
+            tiled_poses = np.tile(pose_3x4, (len(keypoints), 1))
             full_T = np.vstack([state.T_first, tiled_poses])
         else:
             full_C = state.C
@@ -65,7 +80,7 @@ class ReplenishmentStep(VoStep):
         # 4. Visualization
         vis = None
         if debug:
-            vis = self._visualize_new_features(curr_img, mask, new_candidates)
+            vis = self._visualize_new_features(curr_img, mask, keypoints)
 
         return full_C, full_F, full_T, vis
 

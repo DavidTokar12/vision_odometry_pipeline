@@ -12,7 +12,7 @@ import numpy as np
 
 class Config:
     # Paths
-    DATA_DIR = "data/malaga"
+    DATA_DIR = "data/kitti05"
     IMG_DIR = os.path.join(DATA_DIR, "images")
     K_FILE = os.path.join(DATA_DIR, "K.txt")
     POSES_FILE = os.path.join(DATA_DIR, "poses.txt")
