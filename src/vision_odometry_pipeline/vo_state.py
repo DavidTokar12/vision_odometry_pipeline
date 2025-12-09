@@ -68,4 +68,4 @@ class VoState:
 
     frame_id: int = 0
 
-    is_initialized: int = 0
+    pipline_init_stage: int = 0

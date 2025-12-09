@@ -9,11 +9,10 @@ from pathlib import Path
 import cv2
 import numpy as np
 
-from vision_odometry_pipeline.steps.create_undistorted_maps import (
-    create_undistorted_maps,
-)
-from vision_odometry_pipeline.steps.intial_pose_finding import InitialPoseFindingStep
 from vision_odometry_pipeline.steps.key_point_tracker import KeypointTrackingStep
+from vision_odometry_pipeline.steps.pipeline_initialization import (
+    PipelineInitialization,
+)
 from vision_odometry_pipeline.steps.pose_estimation import PoseEstimationStep
 from vision_odometry_pipeline.steps.preprocessing import ImagePreprocessingStep
 from vision_odometry_pipeline.steps.replenishment_step import ReplenishmentStep
@@ -41,9 +40,8 @@ class VoRunner:
         self._timings: dict[str, list[float]] = {}
         self._frame_idx = 0
 
-        # --- Initialization Parameters ---
-        self._calibration_matrix = K
-        self._distortion_vec = D
+        # --- Initialization Setup
+        self.pipeline_initialization = PipelineInitialization(K, D)
 
         if self._debug and self._debug_out:
             os.makedirs(self._debug_out, exist_ok=True)
@@ -53,12 +51,11 @@ class VoRunner:
         Ingests a single image, pushes it through the pipeline steps.
         """
 
-        if self._state.is_initialized == 0:
+        if self._state.pipline_init_stage == 0:
+            # --- Find optimal parameters for undistorted images ---
             h, w = image.shape[:2]
-
-            # This function generates the look-up tables and the NEW optimal K
-            map_x, map_y, roi, new_K = create_undistorted_maps(
-                self._calibration_matrix, self._distortion_vec, (h, w)
+            map_x, map_y, roi, new_K = (
+                self.pipeline_initialization.create_undistorted_maps((h, w))
             )
 
             # --- Instantiation of Pipeline Steps ---
@@ -67,7 +64,6 @@ class VoRunner:
             self.pose_est = PoseEstimationStep(K=new_K)
             self.triangulation = TriangulationStep(K=new_K)
             self.replenishment = ReplenishmentStep(max_features=200, min_dist=10)
-            self.intial_pose_finding = InitialPoseFindingStep()
 
             # --- Preprocess Image ---
             self._state.image_buffer.update(image)
@@ -76,12 +72,12 @@ class VoRunner:
 
             # --- Find initial SIFT features and update state ---
             # TODO: check what is returned, might be related to candidates.
-            first_P = self.intial_pose_finding.find_initial_features(self._state)
-            self._state.is_initialized = replace(
+            first_P = self.pipeline_initialization.find_initial_features(self._state)
+            self._state.pipline_init_stage = replace(
                 self._state, is_initialized=1, P=first_P
             )
 
-        elif self._state.is_initialized == 1:
+        elif self._state.pipline_init_stage == 1:
             # --- Preprocess Image ---
             self._state.image_buffer.update(image)
             gray_img, vis_pre = self.preproc.process(self._state, self._debug)
