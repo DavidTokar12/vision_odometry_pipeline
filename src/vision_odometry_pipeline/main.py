@@ -70,6 +70,7 @@ def main():
     print("\nProcessing Complete.")
 
     recorder.close()
+    recorder.compress()
     print(f"Video saved to {debug_output}/out.mp4")
 
 

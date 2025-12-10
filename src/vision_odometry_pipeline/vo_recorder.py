@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import os
+import subprocess
+
 import cv2
 import matplotlib
 import matplotlib.pyplot as plt
@@ -74,7 +77,7 @@ class VoRecorder:
 
         if len(state.P) > 0 or len(state.C) > 0:
             self.ax_img.legend(loc="upper right", fontsize="small")
-        
+
         self.ax_img.axis("off")
 
         # 2. Plot Local Trajectory & Landmarks (Right Column)
@@ -136,7 +139,7 @@ class VoRecorder:
         self.fig.canvas.draw()
 
         img_plot = np.asarray(self.fig.canvas.buffer_rgba())
-        
+
         img_bgr = cv2.cvtColor(img_plot, cv2.COLOR_RGBA2BGR)
 
         if self.video_writer is None:
@@ -152,3 +155,50 @@ class VoRecorder:
         if self.video_writer:
             self.video_writer.release()
         plt.close(self.fig)
+
+    def compress(self):
+        """
+        Compresses video using FFmpeg.
+
+        Args:
+            input_path (str): Path to the source video.
+            output_path (str): Path where the compressed video will be saved.
+        """
+
+        video_path, ext = os.path.splitext(self.output_path)
+        video_path_compressed = f"{video_path}_compressed{ext}"
+
+        # Check if input exists
+        if not os.path.exists(self.output_path):
+            raise FileNotFoundError(f"Input file not found: {self.output_path}")
+
+        # The "Original Command" structure
+        # Using a list of strings is safer and cleaner than a single shell string
+        command = [
+            "ffmpeg",
+            "-y",  # Overwrite output without asking
+            "-i",
+            self.output_path,  # Input file
+            "-c:v",
+            "libx264",  # Video codec H.264
+            "-crf",
+            "23",  # Constant Rate Factor (adjust for quality/size)
+            "-preset",
+            "medium",  # Encoding speed vs compression ratio
+            "-c:a",
+            "aac",  # Audio codec
+            "-b:a",
+            "128k",  # Audio bitrate
+            video_path_compressed,  # Output file
+        ]
+
+        try:
+            # Run the command
+            # capture_output=True allows you to handle stdout/stderr if needed
+            subprocess.run(
+                command, check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE
+            )
+            print(f"Successfully compressed: {video_path_compressed}")
+        except subprocess.CalledProcessError as e:
+            print(f"Error during compression: {e.stderr.decode()}")
+            raise
