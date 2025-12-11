@@ -3,12 +3,14 @@ from __future__ import annotations
 import cv2
 import numpy as np
 
+from scipy.optimize import least_squares
+
 from vision_odometry_pipeline.vo_state import VoState
 from vision_odometry_pipeline.vo_step import VoStep
 
 
 class PoseEstimationConfig:
-    ransac_prob: float = 0.999
+    ransac_prob: float = 0.99
     repr_error: float = 2.0
 
 
@@ -51,6 +53,14 @@ class PoseEstimationStep(VoStep):
         # Filter Outliers
         # -------------------------------------
         if success:
+            inlier_mask = inliers.flatten()
+            P_in = state.P[inlier_mask]
+            X_in = state.X[inlier_mask]
+
+            # 2. Non-Linear Refinement (Motion-Only BA)
+            # This turns a "rough guess" into a "precise pose"
+            rvec, tvec = self.refine_pose_motion_only(rvec, tvec, X_in, P_in)
+
             # Convert vector to 3x3 matrix
             R, _ = cv2.Rodrigues(rvec)
             # world to camera transform
@@ -83,6 +93,46 @@ class PoseEstimationStep(VoStep):
                 vis = cv2.cvtColor(state.image_buffer.curr, cv2.COLOR_GRAY2BGR)
 
         return new_pose, final_P, final_X, vis
+
+    from scipy.optimize import least_squares
+
+    def refine_pose_motion_only(self, rvec, tvec, points_3d, points_2d):
+        """
+        Refines the camera pose (6DOF) to minimize reprojection error.
+        Keeps 3D points FIXED (Motion-Only).
+        """
+        # 1. Flatten initial guess [rx, ry, rz, tx, ty, tz]
+        x0 = np.hstack((rvec.flatten(), tvec.flatten()))
+
+        # 2. Define the Residual Function
+        # This function calculates the difference (error) for every single point
+        def fun(params, X, P, K):
+            r = params[:3]
+            t = params[3:]
+            # Project current 3D points into image using current guess
+            projected, _ = cv2.projectPoints(X, r, t, K, None)
+            projected = projected.reshape(-1, 2)
+
+            # Calculate distance (residual)
+            residuals = (projected - P).flatten()
+            return residuals
+
+        # 3. Run Levenberg-Marquardt Optimization
+        res = least_squares(
+            fun,
+            x0,
+            verbose=0,
+            x_scale="jac",  # Auto-scale variables
+            ftol=1e-4,  # Stop when error change is tiny
+            method="trf",  # Trust Region Reflective (robust)
+            args=(points_3d, points_2d, self.K),
+        )
+
+        # 4. Unpack optimized values
+        rvec_refined = res.x[:3].reshape(3, 1)
+        tvec_refined = res.x[3:].reshape(3, 1)
+
+        return rvec_refined, tvec_refined
 
     def _visualize_reprojection(self, img, p_in, x_in, rvec, tvec):
         vis = cv2.cvtColor(img, cv2.COLOR_GRAY2BGR)

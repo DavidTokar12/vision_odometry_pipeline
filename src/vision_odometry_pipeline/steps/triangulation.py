@@ -9,8 +9,7 @@ from vision_odometry_pipeline.vo_step import VoStep
 
 class TriangulationConfig:
     ransac_prob: float = 0.999
-    min_inliers: int = 50
-    min_pixel_dist: float = 20.0
+    min_pixel_dist: float = 40.0
 
 
 class TriangulationStep(VoStep):
@@ -79,6 +78,9 @@ class TriangulationStep(VoStep):
                 X_local = R_CW_curr @ X + t_CW_curr.flatten()
                 # Discard point if it is behind the camera
                 if X_local[2] <= 0:
+                    continue
+
+                if X_local[2] > 300:
                     continue
 
                 new_X_list.append(X)

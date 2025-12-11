@@ -42,7 +42,7 @@ def main():
     runner = VoRunner(K=K, D=D, debug=True, debug_output=debug_output)
     recorder = VoRecorder(output_path=f"{debug_output}/out.mp4")
 
-    last_frame = 200
+    last_frame = 1000
 
     images_dir = os.path.join(data_path, "images")
     if not os.path.exists(images_dir):

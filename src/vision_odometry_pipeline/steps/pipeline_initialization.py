@@ -12,14 +12,14 @@ from vision_odometry_pipeline.vo_step import VoStep
 # --- Configuration ---
 @dataclass
 class InitializationConfig:
-    lk_win_size: tuple[int, int] = (13, 13)
+    lk_win_size: tuple[int, int] = (21, 21)
     lk_max_level: int = 5
     fb_max_dist: float = 1.0
     ransac_threshold: float = 0.5
     ransac_prob: float = 0.999
     min_buffer_size: int = 2
     min_inliers: int = 100
-    min_pixel_dist: float = 20.0
+    min_pixel_dist: float = 30.0
 
 
 class PipelineInitialization(VoStep):

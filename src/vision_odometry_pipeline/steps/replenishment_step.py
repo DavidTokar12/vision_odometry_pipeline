@@ -8,7 +8,7 @@ from vision_odometry_pipeline.vo_step import VoStep
 
 
 class ReplenishmentStep(VoStep):
-    def __init__(self, max_features: int = 500, min_dist: int = 10):
+    def __init__(self, max_features: int = 1500, min_dist: int = 20):
         super().__init__("Replenishment")
         self.max_features = max_features
         self.min_dist = min_dist
@@ -37,13 +37,24 @@ class ReplenishmentStep(VoStep):
         if not n_needed:
             return state.C, state.F, state.T_first, None
 
+        """
         # Feature Detection (SIFT on the FIRST frame of the buffer)
         sift = cv2.SIFT_create()
         sift_keypoints = sift.detect(curr_img, mask)
+        """
 
-        keypoints = np.array(
-            [kp.pt for kp in sift_keypoints], dtype=np.float32
-        ).reshape(-1, 2)
+        keypoints = cv2.goodFeaturesToTrack(
+            curr_img,
+            mask=mask,
+            maxCorners=n_needed,
+            qualityLevel=0.01,
+            minDistance=self.min_dist,
+            blockSize=3,
+        )
+
+        # keypoints = np.array([kp.pt for kp in features], dtype=np.float32).reshape(-1, 2)
+        keypoints = keypoints.reshape(-1, 2)
+
         if len(keypoints) > n_needed:
             keypoints = keypoints[:n_needed]
 

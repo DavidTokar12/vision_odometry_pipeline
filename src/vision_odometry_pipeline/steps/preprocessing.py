@@ -29,7 +29,8 @@ class ImagePreprocessingStep(VoStep):
         gray_undistorted = gray_undistorted[y : y + h, x : x + w]
 
         # Optional: Equalize Hist
-        # if True: gray_undistorted = cv2.equalizeHist(gray_undistorted)
+        if True:
+            gray_undistorted = cv2.equalizeHist(gray_undistorted)
 
         if debug:
             return gray_undistorted, gray_undistorted
