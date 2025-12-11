@@ -10,20 +10,26 @@ from vision_odometry_pipeline.vo_runner import VoRunner
 
 
 def main():
-    parking_path = "/workspaces/vision_odometry_pipeline/data/parking"
-    debug_output = "/workspaces/vision_odometry_pipeline/debug_output/main/"
+    # 1: parking, 2: kitti, 3: malaga, 4: own video
+    selection = 2
+    if selection == 1:
+        data_path = "/workspaces/vision_odometry_pipeline/data/parking"
+        debug_output = "/workspaces/vision_odometry_pipeline/debug_output/main_parking/"
+    elif selection == 2:
+        data_path = "/workspaces/vision_odometry_pipeline/data/kitti05"
+        debug_output = "/workspaces/vision_odometry_pipeline/debug_output/main_kitti/"
 
-    assert os.path.exists(parking_path), f"Dataset path not found: {parking_path}"
+    assert os.path.exists(data_path), f"Dataset path not found: {data_path}"
 
     os.makedirs(debug_output, exist_ok=True)
 
-    k_path = os.path.join(parking_path, "K.txt")
+    k_path = os.path.join(data_path, "K.txt")
     assert os.path.exists(k_path), "K.txt not found in dataset folder"
     K = np.loadtxt(k_path, delimiter=",", usecols=(0, 1, 2))
 
     print(f"Loaded Camera Matrix K:\n{K}")
 
-    d_path = os.path.join(parking_path, "D.txt")
+    d_path = os.path.join(data_path, "D.txt")
     if os.path.exists(d_path):
         D = np.loadtxt(d_path, delimiter=",")
         print(f"Loaded Distortion Vector:\n{D}")
@@ -36,11 +42,11 @@ def main():
     runner = VoRunner(K=K, D=D, debug=True, debug_output=debug_output)
     recorder = VoRecorder(output_path=f"{debug_output}/out.mp4")
 
-    last_frame = 598
+    last_frame = 200
 
-    images_dir = os.path.join(parking_path, "images")
+    images_dir = os.path.join(data_path, "images")
     if not os.path.exists(images_dir):
-        images_dir = parking_path
+        images_dir = data_path
 
     for i in range(last_frame + 1):
         image_name = f"img_{i:05d}.png"

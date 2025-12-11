@@ -7,13 +7,17 @@ from vision_odometry_pipeline.vo_state import VoState
 from vision_odometry_pipeline.vo_step import VoStep
 
 
+class TriangulationConfig:
+    ransac_prob: float = 0.999
+    min_inliers: int = 50
+    min_pixel_dist: float = 20.0
+
+
 class TriangulationStep(VoStep):
     def __init__(self, K: np.ndarray, min_angle_deg: float = 2.0):
         super().__init__("Triangulation")
+        self.config = TriangulationConfig()
         self.K = K
-        self.fx, self.fy = K[0, 0], K[1, 1]
-        self.cx, self.cy = K[0, 2], K[1, 2]
-        self.min_angle_cos = np.cos(np.deg2rad(min_angle_deg))
 
     def process(
         self, state: VoState, debug: bool
@@ -32,32 +36,14 @@ class TriangulationStep(VoStep):
                 return state.P, state.X, state.C, state.F, state.T_first, vis
             return state.P, state.X, state.C, state.F, state.T_first, None
 
-        # --- Math Logic (Same as before) ---
-        # Unit normalized first image coordinates
-        rays_first_cam = np.ones((len(state.C), 3), dtype=np.float32)
-        rays_first_cam[:, 0] = (state.F[:, 0] - self.cx) / self.fx
-        rays_first_cam[:, 1] = (state.F[:, 1] - self.cy) / self.fy
+        # --- Selection Logic ---
+        displacements = np.linalg.norm(state.C - state.F, axis=1)
 
-        # Unit normalized current image coordinates
-        rays_curr_cam = np.ones((len(state.C), 3), dtype=np.float32)
-        rays_curr_cam[:, 0] = (state.C[:, 0] - self.cx) / self.fx
-        rays_curr_cam[:, 1] = (state.C[:, 1] - self.cy) / self.fy
+        # Create selection mask: TRUE if pixel moved enough
+        ready_mask = displacements > self.config.min_pixel_dist
 
-        # Normalize to unit vector
-        rays_first_cam /= np.linalg.norm(rays_first_cam, axis=1, keepdims=True)
-        rays_curr_cam /= np.linalg.norm(rays_curr_cam, axis=1, keepdims=True)
-
-        # Transform to world frame
+        # Needed for triangulation math below
         T_first_all = state.T_first.reshape(-1, 3, 4)
-        R_first_all = T_first_all[:, :3, :3]
-        R_curr = state.pose[:3, :3]
-
-        rays_first_world = np.einsum("nij,nj->ni", R_first_all, rays_first_cam)
-        rays_curr_world = rays_curr_cam @ R_curr.T
-
-        # Compute angle between rays and create selection mask
-        dot_products = np.sum(rays_first_world * rays_curr_world, axis=1)
-        ready_mask = dot_products < self.min_angle_cos
 
         # --- Triangulation Loop ---
         new_X_list, new_P_list = [], []
@@ -68,19 +54,19 @@ class TriangulationStep(VoStep):
             T_WC_curr = state.pose
             R_CW_curr = T_WC_curr[:3, :3].T
             t_CW_curr = -R_CW_curr @ T_WC_curr[:3, 3]
-            P2 = self.K @ np.hstack((R_CW_curr, t_CW_curr.reshape(3, 1)))
+            M2 = self.K @ np.hstack((R_CW_curr, t_CW_curr.reshape(3, 1)))
 
             # P for first image
             for idx in indices:
                 T_WC_first = T_first_all[idx]
                 R_CW_first = T_WC_first[:3, :3].T
                 t_CW_first = -R_CW_first @ T_WC_first[:3, 3]
-                P1 = self.K @ np.hstack((R_CW_first, t_CW_first.reshape(3, 1)))
+                M1 = self.K @ np.hstack((R_CW_first, t_CW_first.reshape(3, 1)))
 
                 # first observation pixel coords and candidate 2D keypoint, triangulate
                 pt1 = state.F[idx].reshape(2, 1)
                 pt2 = state.C[idx].reshape(2, 1)
-                point_4d = cv2.triangulatePoints(P1, P2, pt1, pt2)
+                point_4d = cv2.triangulatePoints(M1, M2, pt1, pt2)
 
                 # Filter points at infinity
                 if abs(point_4d[3]) < 1e-6:

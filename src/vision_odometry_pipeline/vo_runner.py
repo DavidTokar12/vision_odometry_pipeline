@@ -53,6 +53,7 @@ class VoRunner:
 
         if self._state.pipline_init_stage == 0:
             # --- Find optimal parameters for undistorted images ---
+            print("Creating undistortion maps...")
             h, w = image.shape[:2]
             map_x, map_y, roi, new_K = (
                 self.pipeline_initialization.create_undistorted_maps((h, w))

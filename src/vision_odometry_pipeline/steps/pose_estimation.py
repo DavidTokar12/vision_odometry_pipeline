@@ -7,9 +7,15 @@ from vision_odometry_pipeline.vo_state import VoState
 from vision_odometry_pipeline.vo_step import VoStep
 
 
+class PoseEstimationConfig:
+    ransac_prob: float = 0.999
+    repr_error: float = 2.0
+
+
 class PoseEstimationStep(VoStep):
     def __init__(self, K: np.ndarray):
         super().__init__("PoseEstimation")
+        self.config = PoseEstimationConfig()
         self.K = K
 
     def process(
@@ -21,28 +27,28 @@ class PoseEstimationStep(VoStep):
         Returns:
             (New_Pose, Inlier_P, Inlier_X, Vis)
         """
-        # 1. Validation
+
         if len(state.P) < 4:
             if debug:
                 vis_fail = cv2.cvtColor(state.image_buffer.curr, cv2.COLOR_GRAY2BGR)
                 return state.pose, state.P, state.X, vis_fail
             return state.pose, state.P, state.X, None
 
-        # 2. P3P RANSAC
+        # P3P RANSAC
         success, rvec, tvec, inliers = cv2.solvePnPRansac(
             state.X,  # Triangulated 3D Landmarks
             state.P,  # Tracked 2D Keypoints
             self.K,
             None,  # No distorsion
             iterationsCount=100,
-            reprojectionError=2.0,
-            confidence=0.99,
+            reprojectionError=self.config.repr_error,
+            confidence=self.config.ransac_prob,
             flags=cv2.SOLVEPNP_P3P,  # use P3P, need 4 points
         )
 
         new_pose = state.pose.copy()
 
-        # 3. Filter Outliers (Logic Moved Here)
+        # Filter Outliers
         # -------------------------------------
         if success:
             # Convert vector to 3x3 matrix
@@ -66,7 +72,7 @@ class PoseEstimationStep(VoStep):
             final_P = state.P
             final_X = state.X
 
-        # 4. Visualization
+        # Visualization
         vis = None
         if debug:
             if success and inliers is not None:

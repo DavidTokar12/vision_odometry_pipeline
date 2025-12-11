@@ -8,7 +8,7 @@ from vision_odometry_pipeline.vo_step import VoStep
 
 
 class ReplenishmentStep(VoStep):
-    def __init__(self, max_features: int = 200, min_dist: int = 10):
+    def __init__(self, max_features: int = 500, min_dist: int = 10):
         super().__init__("Replenishment")
         self.max_features = max_features
         self.min_dist = min_dist

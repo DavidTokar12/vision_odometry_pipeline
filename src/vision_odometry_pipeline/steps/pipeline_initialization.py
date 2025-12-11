@@ -12,51 +12,67 @@ from vision_odometry_pipeline.vo_step import VoStep
 # --- Configuration ---
 @dataclass
 class InitializationConfig:
-    lk_win_size: tuple[int, int] = (15, 15)
-    lk_max_level: int = 3
+    lk_win_size: tuple[int, int] = (13, 13)
+    lk_max_level: int = 5
     fb_max_dist: float = 1.0
-    ransac_threshold: float = 1.0
+    ransac_threshold: float = 0.5
     ransac_prob: float = 0.999
     min_buffer_size: int = 2
-    min_inliers: int = 8
+    min_inliers: int = 100
+    min_pixel_dist: float = 20.0
 
 
 class PipelineInitialization(VoStep):
     def __init__(self, K, D) -> None:
         super().__init__("PipelineInitialization")
+        self.config = InitializationConfig()
         self.initial_K = K
         self.initial_D = D
         self.optimal_K = None
-        self.config = InitializationConfig()
 
-    def process(self, state: VoState, debug: bool):  # TODO: Add return values
+    def process(self, state: VoState, debug: bool):
         img_prev = state.image_buffer.prev
         img_curr = state.image_buffer.curr
 
-        # Track Keypoints
+        # 1. Track Keypoints
         p0 = state.C.astype(np.float32)
         p1, st = self._track_features_bidirectional(img_prev, img_curr, p0)
         p1 = p1.reshape(-1, 2)
 
-        # Update Candidates
+        # 2. Update Candidates (Keep only tracked points)
         st = st.flatten() == 1
-        new_C = p1[st]
-        new_F = state.F[st]
+        new_C = p1[st]  # Current pixel coords
+        new_F = state.F[st]  # First pixel coords (Init start)
         new_T = state.T_first[st]
 
-        # Check if points have moved enough
-        displacements = np.linalg.norm(new_C - new_F, axis=1)
-        displacements.sort()
-        displacements = displacements[-30:]
-
-        avg_parallax = np.mean(displacements) if len(displacements) > 0 else 0.0
-        if avg_parallax < 20.0:
+        if len(new_C) < self.config.min_inliers:
             return new_C, new_F, new_T, None, None, None, False
 
-        # Compute Essential Matrix (between First Obs F and Current C)
-        E, mask = cv2.findEssentialMat(
-            new_C,
-            new_F,
+        # --- CHANGED: Baseline Check (Pixel Disparity) ---
+        # Calculate Euclidean distance between current points and first points
+        displacements = np.linalg.norm(new_C - new_F, axis=1)
+
+        # Create selection mask: TRUE if pixel moved enough
+        ready_mask = displacements > self.config.min_pixel_dist
+
+        # Check if enough points have sufficient parallax
+        if np.sum(ready_mask) < self.config.min_inliers:
+            if debug:
+                avg_disp = np.mean(displacements) if len(displacements) > 0 else 0
+                print(
+                    f"[Init] Low baseline. Avg Disparity: {avg_disp:.2f}px < {self.config.min_pixel_dist}"
+                )
+            return new_C, new_F, new_T, None, None, None, False
+        # -------------------------------------------------
+
+        # Only use the 'ready' points to compute the Essential Matrix
+        cand_C = new_C[ready_mask]
+        cand_F = new_F[ready_mask]
+
+        # 3. Compute Essential Matrix
+        E, mask_ess = cv2.findEssentialMat(
+            cand_F,
+            cand_C,
             self.optimal_K,
             method=cv2.RANSAC,
             prob=self.config.ransac_prob,
@@ -66,53 +82,72 @@ class PipelineInitialization(VoStep):
         if E is None:
             return new_C, new_F, new_T, None, None, None, False
 
-        # Recover pose with inliers
-        mask = mask.ravel()
-        pts0 = new_F[mask]
-        ptsn = new_C[mask]
+        # Filter by Essential Matrix Inliers
+        mask_ess = mask_ess.ravel() == 1
+        cand_C = cand_C[mask_ess]
+        cand_F = cand_F[mask_ess]
 
-        if len(ptsn) < self.config.min_inliers:
+        if len(cand_C) < self.config.min_inliers:
             return new_C, new_F, new_T, None, None, None, False
 
-        _, R, t, mask_pose = cv2.recoverPose(E, ptsn, pts0, self.optimal_K)
+        # Recover Pose (R, t)
+        _, R, t, mask_pose = cv2.recoverPose(E, cand_F, cand_C, self.optimal_K)
 
-        # Filter cheirality (keep points in front of camera) and triangulate
+        # Filter by Cheirality
         pose_inliers = mask_pose.ravel() > 0
-        ptsn = ptsn[pose_inliers]
-        pts0 = pts0[pose_inliers]
+        cand_C = cand_C[pose_inliers]
+        cand_F = cand_F[pose_inliers]
 
-        if len(ptsn) < self.config.min_inliers:
+        if len(cand_C) < self.config.min_inliers:
             return new_C, new_F, new_T, None, None, None, False
 
-        P0 = self.optimal_K @ np.hstack((np.eye(3), np.zeros((3, 1))))
-        P1 = self.optimal_K @ np.hstack((R, t))
-        points4D = cv2.triangulatePoints(P0, P1, pts0.T, ptsn.T)
+        # Triangulation
+        M0 = self.optimal_K @ np.hstack((np.eye(3), np.zeros((3, 1))))
+        M1 = self.optimal_K @ np.hstack((R, t))
+
+        points4D = cv2.triangulatePoints(M0, M1, cand_F.T, cand_C.T)
 
         pts_hom = points4D[:3]
         W = points4D[3]
-
         mask_finite = np.abs(W) > 1e-4
-
-        valid_mask = np.zeros(W.shape, dtype=bool)
+        valid_tri_mask = np.zeros(W.shape, dtype=bool)
 
         if np.any(mask_finite):
             points3D = pts_hom[:, mask_finite] / W[mask_finite]
-            in_front = points3D[2] > 0
-            valid_mask[mask_finite] = in_front
+            in_front_1 = points3D[2] > 0
+            X_local = (R @ points3D) + t
+            in_front_2 = X_local[2] > 0
+            valid_tri_mask[mask_finite] = in_front_1 & in_front_2
 
-        num_valid = np.sum(valid_mask)
+        num_valid = np.sum(valid_tri_mask)
+        print(f"[Init] {num_valid} landmarks detected.")
+
         if num_valid > self.config.min_inliers:
-            print(f"[Init] Success! {num_valid} landmarks.")
+            print(f"[Init] Success! {num_valid} landmarks initialized.")
 
-            # Construct new state
-            new_X = (pts_hom[:, valid_mask] / W[valid_mask]).T
-            new_P = ptsn[valid_mask]
+            new_X = (pts_hom[:, valid_tri_mask] / W[valid_tri_mask]).T
+            new_P = cand_C[valid_tri_mask]
 
             new_pose = np.eye(4)
             new_pose[:3, :3] = R
             new_pose[:3, 3] = t.flatten()
 
-            return new_C, new_F, new_T, new_X, new_P, new_pose, True
+            # Cleanup Candidates
+            keep_mask = np.ones(len(new_C), dtype=bool)
+
+            # Map masks back to original indices
+            idx_ready = np.where(ready_mask)[0]
+            idx_ess = idx_ready[mask_ess]
+            idx_pose = idx_ess[pose_inliers]
+            idx_final = idx_pose[valid_tri_mask]
+
+            keep_mask[idx_final] = False
+
+            rem_C = new_C[keep_mask]
+            rem_F = new_F[keep_mask]
+            rem_T = new_T[keep_mask]
+
+            return rem_C, rem_F, rem_T, new_X, new_P, new_pose, True
 
         return new_C, new_F, new_T, None, None, None, False
 
@@ -126,7 +161,7 @@ class PipelineInitialization(VoStep):
             [kp.pt for kp in sift_keypoints], dtype=np.float32
         ).reshape(-1, 2)
 
-        if len(keypoints) < 15:  # TODO: Adjust this threshold
+        if len(keypoints) < 15:
             print("Warning: Low feature count in initialization frame")
 
         identity_pose_flat = np.hstack((np.eye(3), np.zeros((3, 1)))).flatten()
@@ -137,35 +172,24 @@ class PipelineInitialization(VoStep):
     def create_undistorted_maps(self, image_size):
         """
         Generate lookup maps to remove image distortion.
-
-        Args:
-            K: Camera intrinsic matrix (3x3)
-            D: Distortion coefficients
-            image_size: Tuple of (height, width) for the image resolution
-
-        Returns:
-            map_x, map_y: Lookup maps for cv2.remap() to undistort images
-            roi: Region of interest after undistortion (x, y, w, h)
         """
         h, w = image_size
-
-        # Compute optimal camera matrix to handle black borders
-        # alpha=0: crop all black pixels; alpha=1: keep all original pixels
         self.optimal_K, roi = cv2.getOptimalNewCameraMatrix(
             self.initial_K, self.initial_D, (w, h), alpha=0, newImgSize=(w, h)
         )
 
-        # Generate lookup tables for fast image undistortion
-        # CV_16SC2 format is faster and more memory-efficient than CV_32FC1
+        # Update focal lengths and principal point with optimal values
+        self.fx, self.fy = self.optimal_K[0, 0], self.optimal_K[1, 1]
+        self.cx, self.cy = self.optimal_K[0, 2], self.optimal_K[1, 2]
+
         map_x, map_y = cv2.initUndistortRectifyMap(
             self.initial_K,
             self.initial_D,
-            None,  # R (Rotation matrix) - None for monocular cameras
-            self.optimal_K,  # New camera matrix with optimal parameters
+            None,
+            self.optimal_K,
             (w, h),
             cv2.CV_16SC2,
         )
-
         return map_x, map_y, roi, self.optimal_K
 
     def _track_features_bidirectional(self, img0, img1, p0):
