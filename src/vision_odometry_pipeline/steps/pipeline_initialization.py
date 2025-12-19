@@ -55,7 +55,7 @@ class PipelineInitialization(VoStep):
         # Create selection mask: TRUE if pixel moved enough
         ready_mask = displacements > self.config.min_pixel_dist
 
-        # Check if enough points have sufficient parallax
+        # Check if enough points are ready
         if np.sum(ready_mask) < self.config.min_inliers:
             if debug:
                 avg_disp = np.mean(displacements) if len(displacements) > 0 else 0
@@ -92,6 +92,9 @@ class PipelineInitialization(VoStep):
 
         # Recover Pose (R, t)
         _, R, t, mask_pose = cv2.recoverPose(E, cand_F, cand_C, self.optimal_K)
+
+        # Scale decision
+        t = t / np.linalg.norm(t)
 
         # Filter by Cheirality
         pose_inliers = mask_pose.ravel() > 0

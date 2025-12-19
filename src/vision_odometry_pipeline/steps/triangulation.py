@@ -9,14 +9,17 @@ from vision_odometry_pipeline.vo_step import VoStep
 
 class TriangulationConfig:
     ransac_prob: float = 0.999
-    min_pixel_dist: float = 40.0
+    min_pixel_dist: float = 0.0
+    filter_threshold: float = 0.06
 
 
 class TriangulationStep(VoStep):
-    def __init__(self, K: np.ndarray, min_angle_deg: float = 2.0):
+    def __init__(self, K: np.ndarray, min_angle_deg: float = 1.0):
         super().__init__("Triangulation")
         self.config = TriangulationConfig()
         self.K = K
+        self.min_angle_deg = min_angle_deg
+        self.max_cos_angle = np.cos(np.radians(min_angle_deg))
 
     def process(
         self, state: VoState, debug: bool
@@ -36,8 +39,9 @@ class TriangulationStep(VoStep):
             return state.P, state.X, state.C, state.F, state.T_first, None
 
         # --- Selection Logic ---
-        displacements = np.linalg.norm(state.C - state.F, axis=1)
 
+        # now this is doing nothing, everything is filtered after. Might still be useful in the future
+        displacements = np.linalg.norm(state.C - state.F, axis=1)
         # Create selection mask: TRUE if pixel moved enough
         ready_mask = displacements > self.config.min_pixel_dist
 
@@ -60,6 +64,7 @@ class TriangulationStep(VoStep):
                 T_WC_first = T_first_all[idx]
                 R_CW_first = T_WC_first[:3, :3].T
                 t_CW_first = -R_CW_first @ T_WC_first[:3, 3]
+
                 M1 = self.K @ np.hstack((R_CW_first, t_CW_first.reshape(3, 1)))
 
                 # first observation pixel coords and candidate 2D keypoint, triangulate
@@ -74,12 +79,29 @@ class TriangulationStep(VoStep):
                 # homogeneous coordinate of the candidate 3D landmark
                 X = (point_4d[:3] / point_4d[3].flatten()).flatten()
 
+                # Check if motion is completely in front of you. If yes, don't apply angle filter
+                if (
+                    abs(T_WC_curr[:3, 3] - T_WC_first[:3, 3])[0]
+                    > self.config.filter_threshold
+                ):
+                    # Triangulation angle check
+                    ray1 = X - T_WC_first[:3, 3]
+                    ray2 = X - T_WC_curr[:3, 3]
+
+                    cos_angle = np.dot(ray1, ray2) / (
+                        np.linalg.norm(ray1) * np.linalg.norm(ray2)
+                    )
+                    # Reject if angle too small
+                    if abs(cos_angle) >= self.max_cos_angle:
+                        continue
+
                 # Cheirality check (Is point in front of camera?)
                 X_local = R_CW_curr @ X + t_CW_curr.flatten()
                 # Discard point if it is behind the camera
-                if X_local[2] <= 0:
+                if X_local[2] < 0:
                     continue
 
+                # Stricter depth filtering to prevent scale drift
                 if X_local[2] > 300:
                     continue
 

@@ -12,10 +12,12 @@ class KeypointTrackingStep(VoStep):
         super().__init__("KeypointTracking")
 
         self.lk_params = lk_params or {
-            "winSize": (21, 21),
+            "winSize": (23, 23),
             "maxLevel": 3,
-            "criteria": (cv2.TERM_CRITERIA_EPS | cv2.TERM_CRITERIA_COUNT, 30, 0.01),
+            "criteria": (cv2.TERM_CRITERIA_EPS | cv2.TERM_CRITERIA_COUNT, 30, 0.03),
         }
+        # Bidirectional consistency threshold (pixels)
+        self.repr_error_KLT: float = 1.5
 
     def process(
         self, state: VoState, debug: bool
@@ -34,7 +36,7 @@ class KeypointTrackingStep(VoStep):
         if img_prev is None or img_curr is None:
             raise ValueError("Tracking requires two images in buffer")
 
-        # 1. Track Active Keypoints (P)
+        # Track Active Keypoints (P)
         p0 = state.P.astype(np.float32)
         p1 = np.empty((0, 2), dtype=np.float32)
         st_p = np.empty((0,), dtype=np.uint8)
@@ -46,7 +48,7 @@ class KeypointTrackingStep(VoStep):
             p1, st_p = self._track_features_bidirectional(img_prev, img_curr, p0)
             st_p = st_p.reshape(-1)
 
-        # 2. Track Candidate Keypoints (C)
+        # Track Candidate Keypoints (C)
         c0 = state.C.astype(np.float32)
         c1 = np.empty((0, 2), dtype=np.float32)
         st_c = np.empty((0,), dtype=np.uint8)
@@ -58,7 +60,7 @@ class KeypointTrackingStep(VoStep):
             c1, st_c = self._track_features_bidirectional(img_prev, img_curr, c0)
             st_c = st_c.reshape(-1)
 
-        # 3. Filter Data
+        # Filter Data
         # --------------------------------
         # Filter P and align X
         valid_p = st_p == 1
@@ -122,22 +124,17 @@ class KeypointTrackingStep(VoStep):
         return vis
 
     def _track_features_bidirectional(self, img0, img1, p0):
-        lk_params = dict(
-            winSize=(15, 15),
-            maxLevel=3,
-            criteria=(cv2.TERM_CRITERIA_EPS | cv2.TERM_CRITERIA_COUNT, 30, 0.01),
-        )
         # Forward flow
-        p1, st1, err1 = cv2.calcOpticalFlowPyrLK(img0, img1, p0, None, **lk_params)
+        p1, st1, err1 = cv2.calcOpticalFlowPyrLK(img0, img1, p0, None, **self.lk_params)
         # Backward flow
-        p0r, st2, err2 = cv2.calcOpticalFlowPyrLK(img1, img0, p1, None, **lk_params)
+        p0r, st2, err2 = cv2.calcOpticalFlowPyrLK(
+            img1, img0, p1, None, **self.lk_params
+        )
 
-        # Check consistency (L-infinity norm)
+        # Check consistency
         dist = abs(p0 - p0r).reshape(-1, 2).max(-1)
         good_mask = (
-            (st1.flatten() == 1)
-            & (st2.flatten() == 1)
-            & (dist < 1.0)  # this was in the config file
+            (st1.flatten() == 1) & (st2.flatten() == 1) & (dist < self.repr_error_KLT)
         )
 
         return p1, good_mask

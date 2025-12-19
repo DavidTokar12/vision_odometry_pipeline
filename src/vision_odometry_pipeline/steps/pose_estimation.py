@@ -10,7 +10,7 @@ from vision_odometry_pipeline.vo_step import VoStep
 
 
 class PoseEstimationConfig:
-    ransac_prob: float = 0.99
+    ransac_prob: float = 0.999
     repr_error: float = 2.0
 
 
@@ -57,12 +57,12 @@ class PoseEstimationStep(VoStep):
             P_in = state.P[inlier_mask]
             X_in = state.X[inlier_mask]
 
-            # 2. Non-Linear Refinement (Motion-Only BA)
-            # This turns a "rough guess" into a "precise pose"
+            # Non-Linear Refinement (Motion-Only BA)
             rvec, tvec = self.refine_pose_motion_only(rvec, tvec, X_in, P_in)
 
             # Convert vector to 3x3 matrix
             R, _ = cv2.Rodrigues(rvec)
+
             # world to camera transform
             T_CW = np.eye(4)
             T_CW[:3, :3] = R
@@ -101,10 +101,10 @@ class PoseEstimationStep(VoStep):
         Refines the camera pose (6DOF) to minimize reprojection error.
         Keeps 3D points FIXED (Motion-Only).
         """
-        # 1. Flatten initial guess [rx, ry, rz, tx, ty, tz]
+        # Flatten initial guess [rx, ry, rz, tx, ty, tz]
         x0 = np.hstack((rvec.flatten(), tvec.flatten()))
 
-        # 2. Define the Residual Function
+        # Define the Residual Function
         # This function calculates the difference (error) for every single point
         def fun(params, X, P, K):
             r = params[:3]
@@ -117,7 +117,7 @@ class PoseEstimationStep(VoStep):
             residuals = (projected - P).flatten()
             return residuals
 
-        # 3. Run Levenberg-Marquardt Optimization
+        # Run Levenberg-Marquardt Optimization
         res = least_squares(
             fun,
             x0,
@@ -128,7 +128,7 @@ class PoseEstimationStep(VoStep):
             args=(points_3d, points_2d, self.K),
         )
 
-        # 4. Unpack optimized values
+        # Unpack optimized values
         rvec_refined = res.x[:3].reshape(3, 1)
         tvec_refined = res.x[3:].reshape(3, 1)
 

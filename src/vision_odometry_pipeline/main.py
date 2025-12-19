@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import os
 
+from glob import glob
+
 import cv2
 import numpy as np
 
@@ -11,13 +13,19 @@ from vision_odometry_pipeline.vo_runner import VoRunner
 
 def main():
     # 1: parking, 2: kitti, 3: malaga, 4: own video
-    selection = 2
+    selection = 1
     if selection == 1:
         data_path = "/workspaces/vision_odometry_pipeline/data/parking"
         debug_output = "/workspaces/vision_odometry_pipeline/debug_output/main_parking/"
     elif selection == 2:
         data_path = "/workspaces/vision_odometry_pipeline/data/kitti05"
         debug_output = "/workspaces/vision_odometry_pipeline/debug_output/main_kitti/"
+    elif selection == 3:
+        data_path = "/workspaces/vision_odometry_pipeline/data/malaga"
+        img_dir = os.path.join(data_path, "images")
+        left_images = sorted(glob(os.path.join(img_dir, "*left.jpg")))
+        last_frame = len(left_images - 1)
+        debug_output = "/workspaces/vision_odometry_pipeline/debug_output/main_malaga/"
 
     assert os.path.exists(data_path), f"Dataset path not found: {data_path}"
 
@@ -42,15 +50,18 @@ def main():
     runner = VoRunner(K=K, D=D, debug=True, debug_output=debug_output)
     recorder = VoRecorder(output_path=f"{debug_output}/out.mp4")
 
-    last_frame = 1000
+    last_frame = 500
 
     images_dir = os.path.join(data_path, "images")
     if not os.path.exists(images_dir):
         images_dir = data_path
 
     for i in range(last_frame + 1):
-        image_name = f"img_{i:05d}.png"
-        image_path = os.path.join(images_dir, image_name)
+        if selection == 3:
+            image_path = left_images[i]
+        else:
+            image_name = f"img_{i:05d}.png"
+            image_path = os.path.join(images_dir, image_name)
 
         if not os.path.exists(image_path):
             image_path = os.path.join(images_dir, f"{i:06d}.png")
