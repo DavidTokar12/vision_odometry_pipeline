@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import os
 import subprocess
 
@@ -13,7 +14,11 @@ from matplotlib.gridspec import GridSpec
 
 matplotlib.use("Agg")
 
+
 from vision_odometry_pipeline.vo_state import VoState
+
+
+logging.getLogger("matplotlib.axes._base").setLevel(logging.ERROR)
 
 
 class VoRecorder:
@@ -32,13 +37,17 @@ class VoRecorder:
         # Right (0-2, 2): Local Trajectory (Tall)
         # Bottom-Left (1, 0): Landmark Count
         # Bottom-Middle (1, 1): Full Trajectory
-        self.fig = plt.figure(figsize=(16, 9), constrained_layout=True)
+        self.fig = plt.figure(figsize=(16, 9))  # , constrained_layout=True)
         gs = GridSpec(2, 3, figure=self.fig, height_ratios=[1.5, 1])
 
         self.ax_img = self.fig.add_subplot(gs[0, 0:2])
         self.ax_local = self.fig.add_subplot(gs[:, 2])
         self.ax_count = self.fig.add_subplot(gs[1, 0])
         self.ax_full = self.fig.add_subplot(gs[1, 1])
+
+        self.fig.subplots_adjust(
+            left=0.05, right=0.95, top=0.95, bottom=0.05, wspace=0.2, hspace=0.2
+        )
 
         # Style tweaks
         for ax in [self.ax_local, self.ax_count, self.ax_full]:
@@ -108,6 +117,14 @@ class VoRecorder:
                     alpha=0.5,
                     label="Landmarks",
                 )
+
+            # In update(), for the local trajectory:
+            # cx, cz = current_x, current_z # (Get these from your trajectory)
+            radius_x = max(abs(tx[0] - tx[-1]) * 1.5, 5)
+            radius_y = max(abs(tz[0] - tz[-1]) * 1.5, 5)
+
+            self.ax_local.set_xlim(tx[-1] - radius_x, tx[-1] + radius_x)
+            self.ax_local.set_ylim(tz[-1] - radius_y, tz[-1] + radius_y)
 
         # 3. Plot Landmark Count History (Bottom Left)
         self.ax_count.clear()
