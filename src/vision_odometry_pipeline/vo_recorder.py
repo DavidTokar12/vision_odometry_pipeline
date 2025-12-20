@@ -12,12 +12,14 @@ import numpy as np
 from matplotlib.gridspec import GridSpec
 
 
+# Use the 'Agg' backend for non-interactive, headless plotting
 matplotlib.use("Agg")
 
 
 from vision_odometry_pipeline.vo_state import VoState
 
 
+# Suppress low-level matplotlib logging
 logging.getLogger("matplotlib.axes._base").setLevel(logging.ERROR)
 
 
@@ -26,18 +28,18 @@ class VoRecorder:
         self.output_path = output_path
         self.frame_rate = frame_rate
 
-        # Internal History
+        # Tracking state history
         self.landmark_history: list[int] = []
         self.frame_count = 0
         self.video_writer = None
 
-        # Setup the Figure similar to the screenshot
+        # Initialize the Figure and Grid Layout
         # Layout: 2 Rows, 3 Cols
-        # Top-Left (0, 0-2): Current Image
-        # Right (0-2, 2): Local Trajectory (Tall)
-        # Bottom-Left (1, 0): Landmark Count
-        # Bottom-Middle (1, 1): Full Trajectory
-        self.fig = plt.figure(figsize=(16, 9))  # , constrained_layout=True)
+        # Top-Left (0, 0-2): Current Camera Image
+        # Right (0-2, 2): Local Trajectory (Tall, vertical plot)
+        # Bottom-Left (1, 0): Landmark Count Graph
+        # Bottom-Middle (1, 1): Full Trajectory Global Map
+        self.fig = plt.figure(figsize=(16, 9))
         gs = GridSpec(2, 3, figure=self.fig, height_ratios=[1.5, 1])
 
         self.ax_img = self.fig.add_subplot(gs[0, 0:2])
@@ -49,45 +51,43 @@ class VoRecorder:
             left=0.05, right=0.95, top=0.95, bottom=0.05, wspace=0.2, hspace=0.2
         )
 
-        # Style tweaks
+        # Apply grid styling to plot axes
         for ax in [self.ax_local, self.ax_count, self.ax_full]:
             ax.grid(True, linestyle=":", alpha=0.6)
 
-        # --- FIX START: Initialize plotting handles ---
-        self.img_artist = None  # Will hold the image object
-        self.scatter_tracked = None  # Will hold the green keypoints
-        self.scatter_candidates = None  # Will hold the red keypoints
+        # Initialize artist handles for efficient updating
+        # This prevents the need to clear and redraw the entire image axis every frame
+        self.img_artist = None  # Holds the imshow object
+        self.scatter_tracked = None  # Holds the green keypoints (tracked)
+        self.scatter_candidates = None  # Holds the red keypoints (candidates)
 
-        # Set static properties once
         self.ax_img.axis("off")
-        # --- FIX END ---
 
     def update(self, state: VoState, full_trajectory: np.ndarray):
         self.frame_count += 1
         num_landmarks = len(state.P)
         self.landmark_history.append(num_landmarks)
 
-        # Convert BGR (OpenCV) to RGB (Matplotlib)
+        # Convert BGR (OpenCV standard) to RGB (Matplotlib standard)
         curr_img_rgb = cv2.cvtColor(state.image_buffer.curr, cv2.COLOR_BGR2RGB)
 
         # ---------------------------------------------------------
-        # 1. Plot Current Image (Optimized to fix jitter)
+        # 1. Update Current Image Display
         # ---------------------------------------------------------
 
-        # A. Update the Title
         self.ax_img.set_title(f"Current Frame {state.frame_id}")
 
-        # B. Handle Image Artist (Create once, then update)
+        # Update the image data efficiently
         if self.img_artist is None:
-            # First frame: Create the image object
+            # First frame: Initialize the image object
             self.img_artist = self.ax_img.imshow(curr_img_rgb, cmap="gray")
         else:
-            # Subsequent frames: Just update pixel data
+            # Subsequent frames: Just update the pixel data
             self.img_artist.set_data(curr_img_rgb)
 
-        # C. Handle Scatter Points (Remove old, plot new)
-        # We cannot use .set_data() easily for scatters if the number of points changes.
-        # It is cleaner to remove the previous scatter artist and plot a new one.
+        # Update Scatter Points (Keypoints)
+        # Note: Scatter plots are difficult to update via .set_data() when the number
+        # of points changes, so we remove the old artists and plot new ones.
 
         if self.scatter_tracked is not None:
             self.scatter_tracked.remove()
@@ -97,13 +97,13 @@ class VoRecorder:
             self.scatter_candidates.remove()
             self.scatter_candidates = None
 
-        # Plot Tracked (Green)
+        # Plot Tracked Keypoints (Green)
         if len(state.P) > 0:
             self.scatter_tracked = self.ax_img.scatter(
                 state.P[:, 0], state.P[:, 1], c="lime", s=3, marker="x", label="Tracked"
             )
 
-        # Plot Candidates (Red)
+        # Plot Candidate Keypoints (Red)
         if len(state.C) > 0:
             self.scatter_candidates = self.ax_img.scatter(
                 state.C[:, 0],
@@ -114,32 +114,26 @@ class VoRecorder:
                 label="Candidates",
             )
 
-        # Manage Legend (Only create it once or if visibility changes)
-        # Since we aren't clearing the axis, the legend persists.
-        # If you need dynamic legends, you can regenerate it, but usually calling it once is fine.
+        # Initialize legend if it doesn't exist yet and we have points to show
         if (
             self.scatter_tracked or self.scatter_candidates
         ) and self.ax_img.get_legend() is None:
             self.ax_img.legend(loc="upper right", fontsize="small")
 
         # ---------------------------------------------------------
-        # 2. Plot Local Trajectory (Right Column)
-        # ... (Rest of your code remains the same) ...
-        # 2. Plot Local Trajectory (Right Column)
-        # ... (Rest of code remains unchanged) ...
-
         # 2. Plot Local Trajectory & Landmarks (Right Column)
-        # Showing last 20 frames + Active Landmarks
+        # ---------------------------------------------------------
+        # Displays the last 20 frames and currently active landmarks
+
         self.ax_local.clear()
         self.ax_local.set_title("Trajectory of last 20 frames")
         self.ax_local.set_xlabel("X [m]")
         self.ax_local.set_ylabel("Z [m]")
         self.ax_local.set_aspect("equal", adjustable="datalim")
 
-        # Get last 20 poses
         lookback = 20
         if len(full_trajectory) > 0:
-            # Trajectory is (N, 4, 4), we want X (0,3) and Z (2,3)
+            # Trajectory shape is (N, 4, 4). We extract X (col 0, row 3) and Z (col 2, row 3)
             local_traj = full_trajectory[-lookback:]
             tx = local_traj[:, 0, 3]
             tz = local_traj[:, 2, 3]
@@ -157,27 +151,29 @@ class VoRecorder:
                     label="Landmarks",
                 )
 
-            # In update(), for the local trajectory:
-            # cx, cz = current_x, current_z # (Get these from your trajectory)
+            # Dynamic view scaling based on movement
             radius_x = max(abs(tx[0] - tx[-1]) * 1.5, 5)
             radius_y = max(abs(tz[0] - tz[-1]) * 1.5, 5)
 
             self.ax_local.set_xlim(tx[-1] - radius_x, tx[-1] + radius_x)
             self.ax_local.set_ylim(tz[-1] - radius_y, tz[-1] + radius_y)
 
+        # ---------------------------------------------------------
         # 3. Plot Landmark Count History (Bottom Left)
+        # ---------------------------------------------------------
         self.ax_count.clear()
         self.ax_count.set_title("# tracked landmarks (last 20 frames)")
         self.ax_count.set_xlabel("Frame")
         self.ax_count.set_ylabel("Count")
 
-        # Plot last 20 counts
         frames = np.arange(max(0, self.frame_count - lookback), self.frame_count)
         counts = self.landmark_history[-lookback:]
         self.ax_count.plot(frames, counts, "k-")
         self.ax_count.set_ylim(bottom=0)
 
+        # ---------------------------------------------------------
         # 4. Plot Full Trajectory (Bottom Middle)
+        # ---------------------------------------------------------
         self.ax_full.clear()
         self.ax_full.set_title("Full Trajectory")
         self.ax_full.set_xlabel("X [m]")
@@ -224,12 +220,10 @@ class VoRecorder:
         video_path, ext = os.path.splitext(self.output_path)
         video_path_compressed = f"{video_path}_compressed{ext}"
 
-        # Check if input exists
         if not os.path.exists(self.output_path):
             raise FileNotFoundError(f"Input file not found: {self.output_path}")
 
-        # The "Original Command" structure
-        # Using a list of strings is safer and cleaner than a single shell string
+        # Construct FFmpeg command
         command = [
             "ffmpeg",
             "-y",  # Overwrite output without asking
@@ -249,8 +243,7 @@ class VoRecorder:
         ]
 
         try:
-            # Run the command
-            # capture_output=True allows you to handle stdout/stderr if needed
+            # Run the command and capture output for error handling
             subprocess.run(
                 command, check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE
             )
