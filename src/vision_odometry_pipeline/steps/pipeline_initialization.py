@@ -19,7 +19,9 @@ class InitializationConfig:
     ransac_prob: float = 0.999
     min_buffer_size: int = 2
     min_inliers: int = 100
-    min_pixel_dist: float = 30.0
+    min_parallax_angle: float = 2.0  # Minimum median angle in degrees
+    min_grid_occupancy: int = 15
+    # find_initial_features() still used hardcoded parameters
 
 
 class PipelineInitialization(VoStep):
@@ -48,22 +50,81 @@ class PipelineInitialization(VoStep):
         if len(new_C) < self.config.min_inliers:
             return new_C, new_F, new_T, None, None, None, False
 
-        # --- CHANGED: Baseline Check (Pixel Disparity) ---
-        # Calculate Euclidean distance between current points and first points
-        displacements = np.linalg.norm(new_C - new_F, axis=1)
+        if len(new_C) < self.config.min_inliers:
+            return new_C, new_F, new_T, None, None, None, False
 
-        # Create selection mask: TRUE if pixel moved enough
-        ready_mask = displacements > self.config.min_pixel_dist
+        # --- NEW: Spatial Distribution Check (Bucketing) ---
+        # Goal: Ensure features are well-distributed across the image
+        h, w = img_curr.shape
+        grid_rows, grid_cols = 10, 10  # 10x10 grid
+        grid_counts = np.zeros((grid_rows, grid_cols), dtype=int)
 
-        # Check if enough points are ready
-        if np.sum(ready_mask) < self.config.min_inliers:
+        # Vectorized bucket index calculation
+        # Normalized coordinates 0.0 to 1.0
+        norm_x = new_C[:, 0] / w
+        norm_y = new_C[:, 1] / h
+
+        # Map to grid indices (0 to 9)
+        idx_x = np.floor(norm_x * grid_cols).astype(int)
+        idx_y = np.floor(norm_y * grid_rows).astype(int)
+
+        # Clip to ensure valid indices (in case a point is slightly outside)
+        idx_x = np.clip(idx_x, 0, grid_cols - 1)
+        idx_y = np.clip(idx_y, 0, grid_rows - 1)
+
+        # Count occupancy
+        # (This loop is fast for ~200 points)
+        for r, c in zip(idx_y, idx_x):
+            grid_counts[r, c] += 1
+
+        occupied_cells = np.sum(grid_counts > 0)
+
+        if occupied_cells < self.config.min_grid_occupancy:
             if debug:
-                avg_disp = np.mean(displacements) if len(displacements) > 0 else 0
                 print(
-                    f"[Init] Low baseline. Avg Disparity: {avg_disp:.2f}px < {self.config.min_pixel_dist}"
+                    f"[Init] Poor distribution. Occupied cells: {occupied_cells} < {self.config.min_grid_occupancy}"
                 )
             return new_C, new_F, new_T, None, None, None, False
+        # ---------------------------------------------------
+
+        # --- CHANGED: Baseline Check (Parallax Angle) ---
+        # 1. Reconstruct bearing vectors (assuming undistorted images & optimal_K)
+        fx, fy = self.optimal_K[0, 0], self.optimal_K[1, 1]
+        cx, cy = self.optimal_K[0, 2], self.optimal_K[1, 2]
+
+        # Convert to normalized coordinates: (u - cx) / fx
+        vec_C = np.stack(
+            [(new_C[:, 0] - cx) / fx, (new_C[:, 1] - cy) / fy, np.ones(len(new_C))],
+            axis=1,
+        )
+        vec_F = np.stack(
+            [(new_F[:, 0] - cx) / fx, (new_F[:, 1] - cy) / fy, np.ones(len(new_F))],
+            axis=1,
+        )
+
+        # 2. Normalize to unit vectors
+        vec_C /= np.linalg.norm(vec_C, axis=1, keepdims=True)
+        vec_F /= np.linalg.norm(vec_F, axis=1, keepdims=True)
+
+        # 3. Compute angle (Dot Product)
+        # Clip to [-1, 1] to avoid NaN errors from floating point precision
+        cos_angles = np.clip(np.sum(vec_C * vec_F, axis=1), -1.0, 1.0)
+        angles_deg = np.degrees(np.arccos(cos_angles))
+
+        # 4. Check global baseline condition (Median Angle)
+        median_angle = np.median(angles_deg)
+        if median_angle < self.config.min_parallax_angle:
+            if debug:
+                print(f"[Init] Low parallax. Median: {median_angle:.2f} deg")
+            return new_C, new_F, new_T, None, None, None, False
+
+        # Create selection mask: Filter points with very low individual parallax
+        # (Using half the global threshold to keep points that are contributing)
+        ready_mask = angles_deg > (self.config.min_parallax_angle * 0.5)
         # -------------------------------------------------
+
+        # Only use the 'ready' points to compute the Essential Matrix
+        cand_C = new_C[ready_mask]
 
         # Only use the 'ready' points to compute the Essential Matrix
         cand_C = new_C[ready_mask]
@@ -155,14 +216,39 @@ class PipelineInitialization(VoStep):
         return new_C, new_F, new_T, None, None, None, False
 
     def find_initial_features(self, state: VoState):
-        # Feature Detection (SIFT on the FIRST frame of the buffer)
         img = state.image_buffer.curr
-        sift = cv2.SIFT_create()
-        sift_keypoints = sift.detect(img, None)
 
-        keypoints = np.array(
-            [kp.pt for kp in sift_keypoints], dtype=np.float32
-        ).reshape(-1, 2)
+        # Split image into a 4x4 grid (16 tiles) to force distribution
+        # You can adjust grid_size based on resolution (e.g., 4 or 5)
+        grid_rows, grid_cols = 4, 4
+        h, w = img.shape
+        h_step = h // grid_rows
+        w_step = w // grid_cols
+
+        # Lower contrast threshold slightly to find points in duller areas
+        # nfeatures per tile cap prevents one tile from dominating
+        sift = cv2.SIFT_create(nfeatures=100, contrastThreshold=0.03)
+
+        all_keypoints = []
+
+        for r in range(grid_rows):
+            for c in range(grid_cols):
+                # Define ROI (Region of Interest)
+                x1, x2 = c * w_step, (c + 1) * w_step
+                y1, y2 = r * h_step, (r + 1) * h_step
+
+                # Detect in the tile
+                tile = img[y1:y2, x1:x2]
+                kps = sift.detect(tile, None)
+
+                # Shift keypoint coordinates back to global frame
+                for kp in kps:
+                    kp.pt = (kp.pt[0] + x1, kp.pt[1] + y1)
+                    all_keypoints.append(kp)
+
+        keypoints = np.array([kp.pt for kp in all_keypoints], dtype=np.float32).reshape(
+            -1, 2
+        )
 
         if len(keypoints) < 15:
             print("Warning: Low feature count in initialization frame")
