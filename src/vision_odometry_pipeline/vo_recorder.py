@@ -53,29 +53,59 @@ class VoRecorder:
         for ax in [self.ax_local, self.ax_count, self.ax_full]:
             ax.grid(True, linestyle=":", alpha=0.6)
 
+        # --- FIX START: Initialize plotting handles ---
+        self.img_artist = None  # Will hold the image object
+        self.scatter_tracked = None  # Will hold the green keypoints
+        self.scatter_candidates = None  # Will hold the red keypoints
+
+        # Set static properties once
+        self.ax_img.axis("off")
+        # --- FIX END ---
+
     def update(self, state: VoState, full_trajectory: np.ndarray):
-        """
-        Updates the dashboard with the current state and writes a frame to video.
-        """
         self.frame_count += 1
         num_landmarks = len(state.P)
         self.landmark_history.append(num_landmarks)
 
-        # 1. Plot Current Image (Top Left)
-        self.ax_img.clear()
-        self.ax_img.set_title(f"Current Frame {state.frame_id}")
-
         # Convert BGR (OpenCV) to RGB (Matplotlib)
         curr_img_rgb = cv2.cvtColor(state.image_buffer.curr, cv2.COLOR_BGR2RGB)
-        self.ax_img.imshow(curr_img_rgb, cmap="gray")
 
-        # Overlay Keypoints (P = Green, C = Red)
+        # ---------------------------------------------------------
+        # 1. Plot Current Image (Optimized to fix jitter)
+        # ---------------------------------------------------------
+
+        # A. Update the Title
+        self.ax_img.set_title(f"Current Frame {state.frame_id}")
+
+        # B. Handle Image Artist (Create once, then update)
+        if self.img_artist is None:
+            # First frame: Create the image object
+            self.img_artist = self.ax_img.imshow(curr_img_rgb, cmap="gray")
+        else:
+            # Subsequent frames: Just update pixel data
+            self.img_artist.set_data(curr_img_rgb)
+
+        # C. Handle Scatter Points (Remove old, plot new)
+        # We cannot use .set_data() easily for scatters if the number of points changes.
+        # It is cleaner to remove the previous scatter artist and plot a new one.
+
+        if self.scatter_tracked is not None:
+            self.scatter_tracked.remove()
+            self.scatter_tracked = None
+
+        if self.scatter_candidates is not None:
+            self.scatter_candidates.remove()
+            self.scatter_candidates = None
+
+        # Plot Tracked (Green)
         if len(state.P) > 0:
-            self.ax_img.scatter(
+            self.scatter_tracked = self.ax_img.scatter(
                 state.P[:, 0], state.P[:, 1], c="lime", s=3, marker="x", label="Tracked"
             )
+
+        # Plot Candidates (Red)
         if len(state.C) > 0:
-            self.ax_img.scatter(
+            self.scatter_candidates = self.ax_img.scatter(
                 state.C[:, 0],
                 state.C[:, 1],
                 c="red",
@@ -84,10 +114,19 @@ class VoRecorder:
                 label="Candidates",
             )
 
-        if len(state.P) > 0 or len(state.C) > 0:
+        # Manage Legend (Only create it once or if visibility changes)
+        # Since we aren't clearing the axis, the legend persists.
+        # If you need dynamic legends, you can regenerate it, but usually calling it once is fine.
+        if (
+            self.scatter_tracked or self.scatter_candidates
+        ) and self.ax_img.get_legend() is None:
             self.ax_img.legend(loc="upper right", fontsize="small")
 
-        self.ax_img.axis("off")
+        # ---------------------------------------------------------
+        # 2. Plot Local Trajectory (Right Column)
+        # ... (Rest of your code remains the same) ...
+        # 2. Plot Local Trajectory (Right Column)
+        # ... (Rest of code remains unchanged) ...
 
         # 2. Plot Local Trajectory & Landmarks (Right Column)
         # Showing last 20 frames + Active Landmarks

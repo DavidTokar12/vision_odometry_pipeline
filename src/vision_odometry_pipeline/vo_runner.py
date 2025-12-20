@@ -50,6 +50,7 @@ class VoRunner:
         """
         Ingests a single image, pushes it through the pipeline steps.
         """
+        self._state = replace(self._state, frame_id=self._frame_idx)
 
         if self._state.pipline_init_stage == 0:
             # --- Find optimal parameters for undistorted images ---
