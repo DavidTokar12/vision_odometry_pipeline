@@ -1,5 +1,6 @@
 # Project data
-data/**/images/
+data/
+**.zip
 
 # Project outputs
 debug_output/

@@ -21,12 +21,9 @@ Before getting started, ensure you have the following installed:
 The development environment will be ready once the container is open.
 
 ### Import Datasets
-1. Download the compressed dataset archive from the course website (https://rpg.ifi.uzh.ch/teaching.html#VAMR) and extract them. 
-2. In `data/`, find the directory of the dataset you want to use and create a new folder called `images` in it.
-3. Copy the images from the extracted archive into the newly created folder.
-   1. For the `parking` dataset, copy the contents from the archive's `images/` directory.
-   2. For the `kitti` dataset, copy the contents of the archive's `05/images_0` directory.
-   3. For the `malaga` dataset, copy the contents of the archive's `Images/` directory. The 
+1. Download the compressed dataset archive from the course website (https://rpg.ifi.uzh.ch/teaching.html#VAMR).
+2. Create the `data/` directory in the project root.
+3. Move the dataset archive to `data/` and extract it. The dataloader expects the default structure from the archive
 
 ### Shortcomings
 The following point may be problematic for a more general VO pipeline as they are currently implemented in a very basic way:
