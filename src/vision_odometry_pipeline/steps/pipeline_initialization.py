@@ -9,6 +9,15 @@ from vision_odometry_pipeline.vo_state import VoState
 from vision_odometry_pipeline.vo_step import VoStep
 
 
+# --- DEBUG / CHEATING ---
+# Use poses.txt for bootstrapping
+# Change CHEATMODE to enable/disable
+# Set the correct path matching the option in main.py
+CHEATMODE = False
+DEBUG_GT_POSES_PATH = "data/parking/poses.txt"
+# DEBUG_GT_POSES_PATH = "data/kitti/poses/05.txt"
+
+
 # --- Configuration ---
 @dataclass
 class InitializationConfig:
@@ -32,6 +41,10 @@ class PipelineInitialization(VoStep):
         self.initial_D = D
         self.optimal_K = None
 
+        # For DEBUG / CHEAT mode
+        # TODO: Don't forget to remove again
+        self._cached_gt_poses = None
+
     def process(self, state: VoState, debug: bool):
         img_prev = state.image_buffer.prev
         img_curr = state.image_buffer.curr
@@ -50,8 +63,10 @@ class PipelineInitialization(VoStep):
         if len(new_C) < self.config.min_inliers:
             return new_C, new_F, new_T, None, None, None, False
 
-        if len(new_C) < self.config.min_inliers:
-            return new_C, new_F, new_T, None, None, None, False
+        # For DEBUG / CHEAT mode
+        # TODO: Don't forget to remove again
+        if CHEATMODE:
+            return self._process_with_gt(state, new_C, new_F, new_T)
 
         # --- NEW: Spatial Distribution Check (Bucketing) ---
         # Goal: Ensure features are well-distributed across the image
@@ -214,6 +229,90 @@ class PipelineInitialization(VoStep):
             return rem_C, rem_F, rem_T, new_X, new_P, new_pose, True
 
         return new_C, new_F, new_T, None, None, None, False
+
+    # For DEBUG / CHEAT mode
+    # TODO: Don't forget to remove again
+    def _process_with_gt(self, state, cand_C, cand_F, cand_T):
+        """Hijacked logic using Ground Truth."""
+        if self._cached_gt_poses is None:
+            self._cached_gt_poses = self._load_poses(DEBUG_GT_POSES_PATH)
+
+        # 1. Get Poses for Frame 0 (Start) and Current Frame
+        # Assuming init started at frame 0. If your buffer started later, adjust index.
+        try:
+            T_wc_0 = self._cached_gt_poses[0]
+            T_wc_1 = self._cached_gt_poses[state.frame_id]
+        except IndexError:
+            print(f"[Init-GT] Error: GT Poses not found for frame {state.frame_id}")
+            return cand_C, cand_F, cand_T, None, None, None, False
+
+        print(f"[Init-GT] Cheating with GT Poses for Frame 0 -> {state.frame_id}")
+
+        # 2. Invert to T_CW (World-to-Camera) for Projection Matrices
+        T_cw_0 = self._inv_pose(T_wc_0)
+        T_cw_1 = self._inv_pose(T_wc_1)
+
+        P0 = self.optimal_K @ T_cw_0[:3, :]
+        P1 = self.optimal_K @ T_cw_1[:3, :]
+
+        # 3. Triangulate
+        pts4D = cv2.triangulatePoints(P0, P1, cand_F.T, cand_C.T)
+
+        # 4. Filter
+        pts_hom = pts4D[:3]
+        W = pts4D[3]
+        mask_valid = np.abs(W) > 1e-4
+
+        # Check Depth (Cheirality)
+        if np.any(mask_valid):
+            points3D = pts_hom[:, mask_valid] / W[mask_valid]  # In World Frame
+
+            # Check depth in current camera
+            X_cam = (T_cw_1[:3, :3] @ points3D) + T_cw_1[:3, 3][:, None]
+            in_front = X_cam[2] > 0
+            mask_valid[mask_valid] = in_front
+
+        num_valid = np.sum(mask_valid)
+
+        if num_valid > self.config.min_inliers:
+            print(f"[Init-GT] Success! {num_valid} landmarks initialized via GT.")
+
+            new_X = (pts_hom[:, mask_valid] / W[mask_valid]).T
+            new_P = cand_C[mask_valid]
+
+            # Return the GT Pose (T_WC) as the initial pose state
+            new_pose = np.eye(4)
+            new_pose[:3, :] = T_wc_1[:3, :]  # Use T_WC
+
+            # Simply drop candidates that weren't triangulated
+            # (Or return them in rem_C if you want to keep tracking them)
+            rem_C = cand_C[~mask_valid]
+            rem_F = cand_F[~mask_valid]
+            rem_T = cand_T[~mask_valid]
+
+            return rem_C, rem_F, rem_T, new_X, new_P, new_pose, True
+
+        print(f"[Init-GT] Waiting for baseline... ({num_valid} valid points)")
+        return cand_C, cand_F, cand_T, None, None, None, False
+
+    # For DEBUG / CHEAT mode
+    # TODO: Don't forget to remove again
+    def _load_poses(self, path):
+        poses = []
+        with open(path) as f:
+            for line in f:
+                if not line.strip():
+                    continue
+                vals = [float(x) for x in line.split()]
+                poses.append(np.array(vals).reshape(3, 4))
+        return poses
+
+    # For DEBUG / CHEAT mode
+    # TODO: Don't forget to remove again
+    def _inv_pose(self, T):
+        R = T[:3, :3]
+        t = T[:3, 3]
+        return np.hstack((R.T, (-R.T @ t).reshape(3, 1)))
 
     def find_initial_features(self, state: VoState):
         img = state.image_buffer.curr

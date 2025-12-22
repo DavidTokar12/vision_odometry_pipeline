@@ -12,7 +12,7 @@ def main():
     dataset_selection = 0
 
     # Initialize DataLoader
-    sequence = ImageSequence(dataset_id=dataset_selection, last_frame=120)
+    sequence = ImageSequence(dataset_id=dataset_selection)
 
     print("Initializing VO Runner...")
     runner = VoRunner(

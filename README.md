@@ -25,6 +25,15 @@ The development environment will be ready once the container is open.
 2. Create the `data/` directory in the project root.
 3. Move the dataset archive to `data/` and extract it. The dataloader expects the default structure from the archive
 
+### Debugging
+To isolate the pipeline from the initialization step, precomputed poses can be used for the parking and kitti dataset.
+This option has to be set up manually in the `steps/pipeline_initialization.py` file:
+- Use `CHEATMODE` to enable/disable the option
+- Set `DEBUG_GT_POSES_PATH` to the correct dataset. 
+  - !!! Make sure this path matches the selection in `main.py` !!!
+  - Note that this will override the previous output video. Rename the old video if you want to keep it.
+
+
 ### Shortcomings
 The following point may be problematic for a more general VO pipeline as they are currently implemented in a very basic way:
 - Parameters for the PNP/Ransac and the KTL functions were determined by trial and error to work with the provided datasets.
