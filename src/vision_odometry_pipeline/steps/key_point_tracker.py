@@ -126,11 +126,9 @@ class KeypointTrackingStep(VoStep):
 
     def _track_features_bidirectional(self, img0, img1, p0):
         # Forward flow
-        p1, st1, err1 = cv2.calcOpticalFlowPyrLK(img0, img1, p0, None, **self.lk_params)
+        p1, st1, _ = cv2.calcOpticalFlowPyrLK(img0, img1, p0, None, **self.lk_params)
         # Backward flow
-        p0r, st2, err2 = cv2.calcOpticalFlowPyrLK(
-            img1, img0, p1, None, **self.lk_params
-        )
+        p0r, st2, _ = cv2.calcOpticalFlowPyrLK(img1, img0, p1, None, **self.lk_params)
 
         # Check consistency
         dist = abs(p0 - p0r).reshape(-1, 2).max(-1)
