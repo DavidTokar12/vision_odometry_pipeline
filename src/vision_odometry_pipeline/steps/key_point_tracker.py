@@ -12,13 +12,13 @@ class KeypointTrackingStep(VoStep):
     def __init__(self):
         super().__init__("KeypointTracking")
 
-        self.lk_params = {
-            "winSize": KeypointTrackingConfig.win_size,
-            "maxLevel": KeypointTrackingConfig.max_level,
-            "criteria": KeypointTrackingConfig.criteria,
-        }
+        self.config = KeypointTrackingConfig()
 
-        self.repr_error_KLT = KeypointTrackingConfig.bidirectional_error
+        self.lk_params = {
+            "winSize": self.config.win_size,
+            "maxLevel": self.config.max_level,
+            "criteria": self.config.criteria,
+        }
 
     def process(
         self, state: VoState, debug: bool
@@ -135,7 +135,9 @@ class KeypointTrackingStep(VoStep):
         # Check consistency
         dist = abs(p0 - p0r).reshape(-1, 2).max(-1)
         good_mask = (
-            (st1.flatten() == 1) & (st2.flatten() == 1) & (dist < self.repr_error_KLT)
+            (st1.flatten() == 1)
+            & (st2.flatten() == 1)
+            & (dist < self.config.bidirectional_error)
         )
 
         return p1, good_mask
