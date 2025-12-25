@@ -38,10 +38,10 @@ class PoseEstimationStep(VoStep):
             state.P,  # Tracked 2D Keypoints
             self.K,
             None,  # No distorsion
-            iterationsCount=100,
+            iterationsCount=self.config.iterations_count,
             reprojectionError=self.config.repr_error,
             confidence=self.config.ransac_prob,
-            flags=cv2.SOLVEPNP_P3P,  # use P3P, need 4 points
+            flags=self.config.pnp_flags,  # use P3P, need 4 points
         )
 
         new_pose = state.pose.copy()

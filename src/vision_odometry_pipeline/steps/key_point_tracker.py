@@ -12,8 +12,13 @@ class KeypointTrackingStep(VoStep):
     def __init__(self):
         super().__init__("KeypointTracking")
 
-        self.lk_params = KeypointTrackingConfig.lk_params
-        self.repr_error_KLT = KeypointTrackingConfig.repr_error
+        self.lk_params = {
+            "winSize": KeypointTrackingConfig.win_size,
+            "maxLevel": KeypointTrackingConfig.max_level,
+            "criteria": KeypointTrackingConfig.criteria,
+        }
+
+        self.repr_error_KLT = KeypointTrackingConfig.bidirectional_error
 
     def process(
         self, state: VoState, debug: bool

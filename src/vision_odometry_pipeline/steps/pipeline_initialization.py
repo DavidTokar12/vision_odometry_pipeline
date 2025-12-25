@@ -55,7 +55,8 @@ class PipelineInitialization(VoStep):
         # --- NEW: Spatial Distribution Check (Bucketing) ---
         # Goal: Ensure features are well-distributed across the image
         h, w = img_curr.shape
-        grid_rows, grid_cols = 10, 10  # 10x10 grid
+        grid_rows = self.config.grid_rows
+        grid_cols = self.config.grid_cols
         grid_counts = np.zeros((grid_rows, grid_cols), dtype=int)
 
         # Vectorized bucket index calculation
@@ -119,7 +120,9 @@ class PipelineInitialization(VoStep):
 
         # Create selection mask: Filter points with very low individual parallax
         # (Using half the global threshold to keep points that are contributing)
-        ready_mask = angles_deg > (self.config.min_parallax_angle * 0.5)
+        ready_mask = angles_deg > (
+            self.config.min_parallax_angle * self.config.parallax_factor
+        )
         # -------------------------------------------------
 
         # Only use the 'ready' points to compute the Essential Matrix
@@ -303,19 +306,21 @@ class PipelineInitialization(VoStep):
 
         # Split image into a 4x4 grid (16 tiles) to force distribution
         # You can adjust grid_size based on resolution (e.g., 4 or 5)
-        grid_rows, grid_cols = 4, 4
         h, w = img.shape
-        h_step = h // grid_rows
-        w_step = w // grid_cols
+        h_step = h // self.config.tile_rows
+        w_step = w // self.config.tile_cols
 
         # Lower contrast threshold slightly to find points in duller areas
         # nfeatures per tile cap prevents one tile from dominating
-        sift = cv2.SIFT_create(nfeatures=100, contrastThreshold=0.03)
+        sift = cv2.SIFT_create(
+            nfeatures=self.config.n_features,
+            contrastThreshold=self.config.contrast_threshold,
+        )
 
         all_keypoints = []
 
-        for r in range(grid_rows):
-            for c in range(grid_cols):
+        for r in range(self.config.grid_rows):
+            for c in range(self.config.grid_cols):
                 # Define ROI (Region of Interest)
                 x1, x2 = c * w_step, (c + 1) * w_step
                 y1, y2 = r * h_step, (r + 1) * h_step
@@ -333,7 +338,7 @@ class PipelineInitialization(VoStep):
             -1, 2
         )
 
-        if len(keypoints) < 15:
+        if len(keypoints) < self.config.min_init_features:
             print("Warning: Low feature count in initialization frame")
 
         identity_pose_flat = np.hstack((np.eye(3), np.zeros((3, 1)))).flatten()
@@ -365,11 +370,11 @@ class PipelineInitialization(VoStep):
         return map_x, map_y, roi, self.optimal_K
 
     def _track_features_bidirectional(self, img0, img1, p0):
-        lk_params = dict(
-            winSize=self.config.lk_win_size,
-            maxLevel=self.config.lk_max_level,
-            criteria=(cv2.TERM_CRITERIA_EPS | cv2.TERM_CRITERIA_COUNT, 30, 0.01),
-        )
+        lk_params = {
+            "winSize": self.config.lk_win_size,
+            "maxLevel": self.config.lk_max_level,
+            "criteria": self.config.lk_criteria,
+        }
         # Forward flow
         p1, st1, err1 = cv2.calcOpticalFlowPyrLK(img0, img1, p0, None, **lk_params)
         # Backward flow

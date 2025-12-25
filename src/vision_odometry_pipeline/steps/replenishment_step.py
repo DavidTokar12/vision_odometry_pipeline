@@ -11,8 +11,7 @@ from vision_odometry_pipeline.vo_step import VoStep
 class ReplenishmentStep(VoStep):
     def __init__(self):
         super().__init__("Replenishment")
-        self.max_features = ReplenishmentConfig.max_features
-        self.min_dist = ReplenishmentConfig.min_dist
+        self.config = ReplenishmentConfig()
 
     def process(
         self, state: VoState, debug: bool
@@ -30,10 +29,12 @@ class ReplenishmentStep(VoStep):
         all_pts = np.vstack([state.P, state.C]) if len(state.C) > 0 else state.P
         if len(all_pts) > 0:
             for pt in all_pts:
-                cv2.circle(mask, (int(pt[0]), int(pt[1])), self.min_dist, 0, -1)
+                cv2.circle(
+                    mask, (int(pt[0]), int(pt[1])), self.config.mask_radius, 0, -1
+                )
 
         # 2. Detection
-        n_needed = self.max_features - len(all_pts)
+        n_needed = self.config.max_features - len(all_pts)
 
         if not n_needed:
             return state.C, state.F, state.T_first, None
@@ -48,9 +49,9 @@ class ReplenishmentStep(VoStep):
             curr_img,
             mask=mask,
             maxCorners=n_needed,
-            qualityLevel=0.01,
-            minDistance=self.min_dist,
-            blockSize=3,
+            qualityLevel=self.config.quality_level,
+            minDistance=self.config.min_dist,
+            blockSize=self.config.block_size,
         )
 
         # keypoints = np.array([kp.pt for kp in features], dtype=np.float32).reshape(-1, 2)

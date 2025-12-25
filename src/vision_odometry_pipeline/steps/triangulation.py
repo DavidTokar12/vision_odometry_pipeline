@@ -9,12 +9,11 @@ from vision_odometry_pipeline.vo_step import VoStep
 
 
 class TriangulationStep(VoStep):
-    def __init__(self, K: np.ndarray, min_angle_deg: float = 1.0):
+    def __init__(self, K: np.ndarray):
         super().__init__("Triangulation")
         self.config = TriangulationConfig()
         self.K = K
-        self.min_angle_deg = min_angle_deg
-        self.max_cos_angle = np.cos(np.radians(min_angle_deg))
+        self.max_cos_angle = np.cos(np.radians(self.config.min_angle_deg))
 
     def process(
         self, state: VoState, debug: bool
@@ -68,7 +67,7 @@ class TriangulationStep(VoStep):
                 point_4d = cv2.triangulatePoints(M1, M2, pt1, pt2)
 
                 # Filter points at infinity
-                if abs(point_4d[3]) < 1e-6:
+                if abs(point_4d[3]) < self.config.infinity_threshold:
                     continue
 
                 # homogeneous coordinate of the candidate 3D landmark
@@ -93,11 +92,11 @@ class TriangulationStep(VoStep):
                 # Cheirality check (Is point in front of camera?)
                 X_local = R_CW_curr @ X + t_CW_curr.flatten()
                 # Discard point if it is behind the camera
-                if X_local[2] < 0:
+                if X_local[2] < self.config.min_depth:
                     continue
 
                 # Stricter depth filtering to prevent scale drift
-                if X_local[2] > 300:
+                if X_local[2] > self.config.max_depth:
                     continue
 
                 new_X_list.append(X)
