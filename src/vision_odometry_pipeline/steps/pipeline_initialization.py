@@ -8,15 +8,6 @@ from vision_odometry_pipeline.vo_state import VoState
 from vision_odometry_pipeline.vo_step import VoStep
 
 
-# --- DEBUG / CHEATING ---
-# Use poses.txt for bootstrapping
-# Change CHEATMODE to enable/disable
-# Set the correct path matching the option in main.py
-CHEATMODE = False
-DEBUG_GT_POSES_PATH = "data/parking/poses.txt"
-# DEBUG_GT_POSES_PATH = "data/kitti/poses/05.txt"
-
-
 class PipelineInitialization(VoStep):
     def __init__(self, K, D) -> None:
         super().__init__("PipelineInitialization")
@@ -49,7 +40,7 @@ class PipelineInitialization(VoStep):
 
         # For DEBUG / CHEAT mode
         # TODO: Don't forget to remove again
-        if CHEATMODE:
+        if self.config.CHEATMODE:
             return self._process_with_gt(state, new_C, new_F, new_T)
 
         # --- NEW: Spatial Distribution Check (Bucketing) ---
@@ -222,7 +213,7 @@ class PipelineInitialization(VoStep):
     def _process_with_gt(self, state, cand_C, cand_F, cand_T):
         """Hijacked logic using Ground Truth."""
         if self._cached_gt_poses is None:
-            self._cached_gt_poses = self._load_poses(DEBUG_GT_POSES_PATH)
+            self._cached_gt_poses = self._load_poses(self.config.DEBUG_GT_POSES_PATH)
 
         # 1. Get Poses for Frame 0 (Start) and Current Frame
         # Assuming init started at frame 0. If your buffer started later, adjust index.

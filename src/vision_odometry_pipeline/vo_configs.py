@@ -21,6 +21,12 @@ class KeypointTrackingConfig:
 class InitializationConfig:
     """Configuration for the Bootstrapping/Initialization phase."""
 
+    # --- Change Bootstrap Option ---
+    # Set the correct path matching the option in main.py
+    CHEATMODE = False
+    DEBUG_GT_POSES_PATH = "data/parking/poses.txt"
+    # DEBUG_GT_POSES_PATH = "data/kitti/poses/05.txt"
+
     # --- Tracking during Init ---
     lk_win_size: tuple[int, int] = (21, 21)
     lk_max_level: int = 5
