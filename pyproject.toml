@@ -62,7 +62,9 @@ ignore = [
     "TC003",
     "TC001",
     "TC002",
-    "ERA001"
+    "ERA001",
+    "N806",
+    "N803"
 ]
 extend-safe-fixes = ["TCH"]
 unfixable = []
