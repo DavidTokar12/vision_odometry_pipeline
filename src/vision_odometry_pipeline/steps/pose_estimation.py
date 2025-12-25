@@ -5,13 +5,9 @@ import numpy as np
 
 from scipy.optimize import least_squares
 
+from vision_odometry_pipeline.vo_configs import PoseEstimationConfig
 from vision_odometry_pipeline.vo_state import VoState
 from vision_odometry_pipeline.vo_step import VoStep
-
-
-class PoseEstimationConfig:
-    ransac_prob: float = 0.999
-    repr_error: float = 2.0
 
 
 class PoseEstimationStep(VoStep):

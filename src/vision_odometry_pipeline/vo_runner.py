@@ -65,7 +65,7 @@ class VoRunner:
             self.tracker = KeypointTrackingStep()
             self.pose_est = PoseEstimationStep(K=new_K)
             self.triangulation = TriangulationStep(K=new_K)
-            self.replenishment = ReplenishmentStep(max_features=4000, min_dist=7)
+            self.replenishment = ReplenishmentStep()
 
             # --- Preprocess Image ---
             self._state.image_buffer.update(image)

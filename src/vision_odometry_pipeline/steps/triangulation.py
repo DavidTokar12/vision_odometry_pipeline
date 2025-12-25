@@ -3,14 +3,9 @@ from __future__ import annotations
 import cv2
 import numpy as np
 
+from vision_odometry_pipeline.vo_configs import TriangulationConfig
 from vision_odometry_pipeline.vo_state import VoState
 from vision_odometry_pipeline.vo_step import VoStep
-
-
-class TriangulationConfig:
-    ransac_prob: float = 0.999
-    min_pixel_dist: float = 0.0
-    filter_threshold: float = 0.06
 
 
 class TriangulationStep(VoStep):

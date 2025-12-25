@@ -3,15 +3,16 @@ from __future__ import annotations
 import cv2
 import numpy as np
 
+from vision_odometry_pipeline.vo_configs import ReplenishmentConfig
 from vision_odometry_pipeline.vo_state import VoState
 from vision_odometry_pipeline.vo_step import VoStep
 
 
 class ReplenishmentStep(VoStep):
-    def __init__(self, max_features: int = 1500, min_dist: int = 20):
+    def __init__(self):
         super().__init__("Replenishment")
-        self.max_features = max_features
-        self.min_dist = min_dist
+        self.max_features = ReplenishmentConfig.max_features
+        self.min_dist = ReplenishmentConfig.min_dist
 
     def process(
         self, state: VoState, debug: bool

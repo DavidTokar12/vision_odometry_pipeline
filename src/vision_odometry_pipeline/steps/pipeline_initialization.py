@@ -1,10 +1,9 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
-
 import cv2
 import numpy as np
 
+from vision_odometry_pipeline.vo_configs import InitializationConfig
 from vision_odometry_pipeline.vo_state import VoState
 from vision_odometry_pipeline.vo_step import VoStep
 
@@ -16,21 +15,6 @@ from vision_odometry_pipeline.vo_step import VoStep
 CHEATMODE = False
 DEBUG_GT_POSES_PATH = "data/parking/poses.txt"
 # DEBUG_GT_POSES_PATH = "data/kitti/poses/05.txt"
-
-
-# --- Configuration ---
-@dataclass
-class InitializationConfig:
-    lk_win_size: tuple[int, int] = (21, 21)
-    lk_max_level: int = 5
-    fb_max_dist: float = 1.0
-    ransac_threshold: float = 0.5
-    ransac_prob: float = 0.999
-    min_buffer_size: int = 2
-    min_inliers: int = 100
-    min_parallax_angle: float = 2.0  # Minimum median angle in degrees
-    min_grid_occupancy: int = 15
-    # find_initial_features() still used hardcoded parameters
 
 
 class PipelineInitialization(VoStep):

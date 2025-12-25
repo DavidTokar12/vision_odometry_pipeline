@@ -3,21 +3,17 @@ from __future__ import annotations
 import cv2
 import numpy as np
 
+from vision_odometry_pipeline.vo_configs import KeypointTrackingConfig
 from vision_odometry_pipeline.vo_state import VoState
 from vision_odometry_pipeline.vo_step import VoStep
 
 
 class KeypointTrackingStep(VoStep):
-    def __init__(self, lk_params: dict | None = None):
+    def __init__(self):
         super().__init__("KeypointTracking")
 
-        self.lk_params = lk_params or {
-            "winSize": (23, 23),
-            "maxLevel": 3,
-            "criteria": (cv2.TERM_CRITERIA_EPS | cv2.TERM_CRITERIA_COUNT, 30, 0.03),
-        }
-        # Bidirectional consistency threshold (pixels)
-        self.repr_error_KLT: float = 1.5
+        self.lk_params = KeypointTrackingConfig.lk_params
+        self.repr_error_KLT = KeypointTrackingConfig.repr_error
 
     def process(
         self, state: VoState, debug: bool
