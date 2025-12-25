@@ -208,6 +208,57 @@ class VoRunner:
     def get_trajectory(self) -> np.ndarray:
         return np.array(self._trajectory)
 
+    @property
+    def last_processing_time(self) -> float:
+        """Returns the total processing time of the last frame in ms."""
+        times = self._timings.get("Total_Frame_Time", [])
+        return times[-1] if times else 0.0
+
+    def print_diagnostics(self):
+        """
+        Prints a performance summary table of all tracking pipeline steps.
+        """
+        if not self._timings:
+            print("No timing data available.")
+            return
+
+        print("\n" + "=" * 50)
+        print(f"{'Performance Metrics (ms)':^50}")
+        print("=" * 50)
+
+        # Table Header
+        header = (
+            f"{'Step Name':<20} | {'Avg':>8} | {'Min':>8} | {'Max':>8} | {'Calls':>5}"
+        )
+        print(header)
+        print("-" * 50)
+
+        # Sort keys to ensure consistent order (e.g. 01_, 02_, etc.)
+        sorted_keys = sorted(self._timings.keys())
+
+        for step in sorted_keys:
+            times = self._timings[step]
+            if not times:
+                continue
+
+            avg_t = np.mean(times)
+            min_t = np.min(times)
+            max_t = np.max(times)
+            count = len(times)
+
+            print(
+                f"{step:<20} | {avg_t:8.2f} | {min_t:8.2f} | {max_t:8.2f} | {count:5}"
+            )
+
+        print("-" * 50)
+
+        # Overall FPS calculation based on Total_Frame_Time
+        if "Total_Frame_Time" in self._timings:
+            avg_total = np.mean(self._timings["Total_Frame_Time"])
+            fps = 1000.0 / avg_total if avg_total > 0 else 0.0
+            print(f"Average FPS: {fps:.2f}  (Mean Frame Time: {avg_total:.2f} ms)")
+        print("=" * 50 + "\n")
+
     def _record_timing(self, step_name: str, t_start: float):
         duration_ms = (time.perf_counter() - t_start) * 1000
         if step_name not in self._timings:

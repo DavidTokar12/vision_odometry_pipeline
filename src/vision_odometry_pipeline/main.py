@@ -9,8 +9,8 @@ from vision_odometry_pipeline.vo_runner import VoRunner
 
 def main():
     # 0: Parking, 1: KITTI, 2: Malaga
-    dataset_selection = 0
-    image_range = 100
+    dataset_selection = 1
+    image_range = 400
 
     # Initialize DataLoader
     sequence = ImageSequence(dataset_id=dataset_selection, last_frame=image_range)
@@ -27,7 +27,6 @@ def main():
     # Main Loop
     while not sequence.is_finished:
         frame_id = sequence.current_idx
-        print(f"Processing Frame {frame_id:04d}...", end="\r")
 
         image = sequence.get_image()
         if image is None:
@@ -40,6 +39,10 @@ def main():
             # If ground truth is needed for recording/plotting
             # you can access loader.ground_truth here
             recorder.update(state=state, full_trajectory=runner.get_trajectory())
+            print(
+                f"Processed Frame {frame_id:04d} in {runner.last_processing_time:.1f} ms",
+                end="\r",
+            )
 
         except Exception as e:
             print(f"\nCritical Failure at Frame {frame_id}: {e}")
@@ -49,6 +52,8 @@ def main():
     recorder.close()
     recorder.compress()
     print(f"Video saved to {video_path}")
+
+    runner.print_diagnostics()
 
 
 if __name__ == "__main__":
