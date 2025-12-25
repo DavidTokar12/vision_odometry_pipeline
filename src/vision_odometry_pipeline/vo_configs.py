@@ -87,6 +87,9 @@ class ReplenishmentConfig:
     mask_radius: int = (
         7  # Radius around existing points to mask out (usually same as min_dist)
     )
+    # --- Tile based replenishment ---
+    grid_rows: int = 5  # Number of rows for feature grid
+    grid_cols: int = 5  # Number of cols for feature grid
 
 
 @dataclass

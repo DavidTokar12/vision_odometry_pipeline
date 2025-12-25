@@ -34,48 +34,70 @@ class ReplenishmentStep(VoStep):
                 )
 
         # 2. Detection
-        n_needed = self.config.max_features - len(all_pts)
+        h, w = curr_img.shape
+        # Calculate target features per cell
+        n_cells = self.config.grid_rows * self.config.grid_cols
+        features_per_cell = int(self.config.max_features / n_cells)
 
-        if not n_needed:
-            return state.C, state.F, state.T_first, None
+        w_step = w // self.config.grid_cols
+        h_step = h // self.config.grid_rows
 
-        """
-        # Feature Detection (SIFT on the FIRST frame of the buffer)
-        sift = cv2.SIFT_create()
-        sift_keypoints = sift.detect(curr_img, mask)
-        """
+        new_keypoints_list = []
 
-        keypoints = cv2.goodFeaturesToTrack(
-            curr_img,
-            mask=mask,
-            maxCorners=n_needed,
-            qualityLevel=self.config.quality_level,
-            minDistance=self.config.min_dist,
-            blockSize=self.config.block_size,
-        )
+        for r in range(self.config.grid_rows):
+            for c in range(self.config.grid_cols):
+                # Define ROI limits
+                x_start, x_end = c * w_step, (c + 1) * w_step
+                y_start, y_end = r * h_step, (r + 1) * h_step
 
-        # keypoints = np.array([kp.pt for kp in features], dtype=np.float32).reshape(-1, 2)
-        keypoints = keypoints.reshape(-1, 2)
+                # Adjust last row/col to cover remainder
+                if c == self.config.grid_cols - 1:
+                    x_end = w
+                if r == self.config.grid_rows - 1:
+                    y_end = h
 
-        if len(keypoints) > n_needed:
-            keypoints = keypoints[:n_needed]
+                # Count existing points in this cell
+                in_region = (
+                    (
+                        (all_pts[:, 0] >= x_start)
+                        & (all_pts[:, 0] < x_end)
+                        & (all_pts[:, 1] >= y_start)
+                        & (all_pts[:, 1] < y_end)
+                    )
+                    if len(all_pts) > 0
+                    else []
+                )
 
-        # identity_pose_flat = np.hstack((np.eye(3), np.zeros((3, 1)))).flatten()
-        # T_first_init = np.tile(identity_pose_flat, (len(keypoints), 1))
+                n_existing = np.sum(in_region)
+                n_needed_cell = features_per_cell - n_existing
 
-        # if n_needed > 0:
-        #     pts = cv2.goodFeaturesToTrack(
-        #         curr_img,
-        #         mask=mask,
-        #         maxCorners=n_needed,
-        #         qualityLevel=0.01,
-        #         minDistance=self.min_dist,
-        #     )
-        #     if pts is not None:
-        #         new_candidates = pts.reshape(-1, 2)
+                if n_needed_cell > 0:
+                    # Extract ROI from image and mask
+                    img_roi = curr_img[y_start:y_end, x_start:x_end]
+                    mask_roi = mask[y_start:y_end, x_start:x_end]
 
-        # 3. Data Stacking (Logic Moved Here)
-        # -----------------------------------
+                    pts = cv2.goodFeaturesToTrack(
+                        img_roi,
+                        mask=mask_roi,
+                        maxCorners=n_needed_cell,
+                        qualityLevel=self.config.quality_level,
+                        minDistance=self.config.min_dist,
+                        blockSize=self.config.block_size,
+                    )
+
+                    if pts is not None:
+                        # Convert to global coordinates
+                        pts = pts.reshape(-1, 2)
+                        pts[:, 0] += x_start
+                        pts[:, 1] += y_start
+                        new_keypoints_list.append(pts)
+
+        if new_keypoints_list:
+            keypoints = np.vstack(new_keypoints_list)
+        else:
+            keypoints = np.empty((0, 2), dtype=np.float32)
+
+        # 3. Data Stacking
         if len(keypoints) > 0:
             full_C = np.vstack([state.C, keypoints])
             full_F = np.vstack([state.F, keypoints])  # F is current pixel loc
