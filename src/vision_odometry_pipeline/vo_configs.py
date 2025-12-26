@@ -108,12 +108,9 @@ class TriangulationConfig:
     )
 
     # --- Geometric Filtering ---
-    min_angle_deg: float = 3.0  # Minimum triangulation angle (degrees) - higher rejects degenerate cases
-    min_translation: float = (
-        0.02  # Minimum translation magnitude to attempt triangulation (prevents pure rotation)
-    )
-    max_rotation_deg: float = (
-        15.0  # Maximum rotation angle to allow triangulation (deg) - skip if pure rotation
+    min_angle_deg: float = 1.0  # Minimum triangulation angle (degrees)
+    filter_threshold: float = (
+        0.06  # Translation threshold to skip angle check (forward motion assumption)
     )
     max_depth: float = (
         300.0  # Maximum allowed depth (meters) to prevent unstable points
