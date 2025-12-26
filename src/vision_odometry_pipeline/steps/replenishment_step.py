@@ -103,7 +103,7 @@ class ReplenishmentStep(VoStep):
                                 y2 = min(img_roi.shape[0], y_local + half_w + 1)
                                 x1 = max(0, x_local - half_w)
                                 x2 = min(img_roi.shape[1], x_local + half_w + 1)
-                                
+
                                 if y2 > y1 and x2 > x1:
                                     window = img_roi[y1:y2, x1:x2]
                                     # Compute Harris response
@@ -114,21 +114,26 @@ class ReplenishmentStep(VoStep):
                                     Ixy = np.mean(Ix * Iy)
                                     det = Ixx * Iyy - Ixy * Ixy
                                     trace = Ixx + Iyy
-                                    response = det - self.config.harris_k * (trace ** 2)
+                                    response = det - self.config.harris_k * (trace**2)
                                     harris_responses.append(response)
                                 else:
                                     harris_responses.append(0.0)
-                            
+
                             # Normalize responses and filter
                             if len(harris_responses) > 0:
                                 max_response = max(harris_responses)
                                 if max_response > 0:
-                                    normalized_responses = np.array(harris_responses) / max_response
-                                    valid_mask = normalized_responses > self.config.harris_threshold
+                                    normalized_responses = (
+                                        np.array(harris_responses) / max_response
+                                    )
+                                    valid_mask = (
+                                        normalized_responses
+                                        > self.config.harris_threshold
+                                    )
                                     pts = pts[valid_mask]
                         else:
                             pts = pts.reshape(-1, 2)
-                        
+
                         if len(pts) > 0:
                             # Convert to global coordinates
                             pts[:, 0] += x_start

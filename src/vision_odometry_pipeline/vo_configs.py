@@ -80,7 +80,7 @@ class ReplenishmentConfig:
     """
 
     # --- Feature Detection (Shi-Tomasi/Harris) ---
-    max_features: int = 1500  # Target total number of active features in the system
+    max_features: int = 4000  # Target total number of active features in the system
     min_dist: int = 10  # Minimum pixel distance between features
     quality_level: float = 0.08  # Corner quality level (0.0 to 1.0)
     block_size: int = 7  # Block size for corner computation
@@ -88,7 +88,7 @@ class ReplenishmentConfig:
         15  # Radius around existing points to mask out (usually same as min_dist)
     )
     use_harris: bool = (
-        True  # Use Harris detector instead of Shi-Tomasi (more selective)
+        False  # Use Harris detector instead of Shi-Tomasi (more selective)
     )
     harris_k: float = 0.04  # Harris detector free parameter
     harris_threshold: float = 0.01  # Minimum Harris response (filters weak corners)
