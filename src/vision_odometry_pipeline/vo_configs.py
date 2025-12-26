@@ -98,11 +98,11 @@ class TriangulationConfig:
 
     # --- Candidate Selection ---
     min_pixel_dist: float = (
-        0.0  # Min pixel displacement before attempting triangulation
+        4.0  # Min pixel displacement before attempting triangulation
     )
 
     # --- Geometric Filtering ---
-    min_angle_deg: float = 1.0  # Minimum triangulation angle (degrees)
+    min_angle_deg: float = 3.0  # Minimum triangulation angle (degrees)
     filter_threshold: float = (
         0.06  # Translation threshold to skip angle check (forward motion assumption)
     )
