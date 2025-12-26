@@ -79,14 +79,20 @@ class ReplenishmentConfig:
     Parameters for detecting new features to maintain tracking stability.
     """
 
-    # --- Feature Detection (Shi-Tomasi) ---
-    max_features: int = 4000  # Target total number of active features in the system
-    min_dist: int = 7  # Minimum pixel distance between features
-    quality_level: float = 0.01  # Shi-Tomasi quality level (0.0 to 1.0)
-    block_size: int = 3  # Block size for corner computation
+    # --- Feature Detection (Shi-Tomasi/Harris) ---
+    max_features: int = 1500  # Target total number of active features in the system
+    min_dist: int = 10  # Minimum pixel distance between features
+    quality_level: float = 0.08  # Corner quality level (0.0 to 1.0)
+    block_size: int = 7  # Block size for corner computation
     mask_radius: int = (
-        7  # Radius around existing points to mask out (usually same as min_dist)
+        15  # Radius around existing points to mask out (usually same as min_dist)
     )
+    use_harris: bool = (
+        True  # Use Harris detector instead of Shi-Tomasi (more selective)
+    )
+    harris_k: float = 0.04  # Harris detector free parameter
+    harris_threshold: float = 0.01  # Minimum Harris response (filters weak corners)
+
     # --- Tile based replenishment ---
     grid_rows: int = 5  # Number of rows for feature grid
     grid_cols: int = 5  # Number of cols for feature grid
@@ -102,9 +108,12 @@ class TriangulationConfig:
     )
 
     # --- Geometric Filtering ---
-    min_angle_deg: float = 1.0  # Minimum triangulation angle (degrees)
-    filter_threshold: float = (
-        0.06  # Translation threshold to skip angle check (forward motion assumption)
+    min_angle_deg: float = 3.0  # Minimum triangulation angle (degrees) - higher rejects degenerate cases
+    min_translation: float = (
+        0.02  # Minimum translation magnitude to attempt triangulation (prevents pure rotation)
+    )
+    max_rotation_deg: float = (
+        15.0  # Maximum rotation angle to allow triangulation (deg) - skip if pure rotation
     )
     max_depth: float = (
         300.0  # Maximum allowed depth (meters) to prevent unstable points
