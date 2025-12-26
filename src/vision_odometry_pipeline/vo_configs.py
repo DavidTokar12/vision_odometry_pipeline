@@ -81,14 +81,14 @@ class ReplenishmentConfig:
 
     # --- Feature Detection (Shi-Tomasi/Harris) ---
     max_features: int = 4000  # Target total number of active features in the system
-    min_dist: int = 10  # Minimum pixel distance between features
-    quality_level: float = 0.08  # Corner quality level (0.0 to 1.0)
-    block_size: int = 7  # Block size for corner computation
+    min_dist: int = 7  # Minimum pixel distance between features
+    quality_level: float = 0.01  # Corner quality level (0.0 to 1.0)
+    block_size: int = 3  # Block size for corner computation
     mask_radius: int = (
-        15  # Radius around existing points to mask out (usually same as min_dist)
+        7  # Radius around existing points to mask out (usually same as min_dist)
     )
     use_harris: bool = (
-        False  # Use Harris detector instead of Shi-Tomasi (more selective)
+        True  # Use Harris detector instead of Shi-Tomasi (more selective)
     )
     harris_k: float = 0.04  # Harris detector free parameter
     harris_threshold: float = 0.01  # Minimum Harris response (filters weak corners)
@@ -108,7 +108,7 @@ class TriangulationConfig:
     )
 
     # --- Geometric Filtering ---
-    min_angle_deg: float = 3.0  # Minimum triangulation angle (degrees)
+    min_angle_deg: float = 2.0  # Minimum triangulation angle (degrees)
     filter_threshold: float = (
         0.06  # Translation threshold to skip angle check (forward motion assumption)
     )
