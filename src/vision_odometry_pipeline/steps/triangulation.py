@@ -64,14 +64,13 @@ class TriangulationStep(VoStep):
                 keep_mask[idx] = False  # Garbage
                 continue
 
-            X = (point_4d[:3] / point_4d[3].flatten()).flatten()
-
             # 2. Angle Check (Parallax)
             # If motion is not dominant translation, check angle
             translation_dist = np.linalg.norm(T_WC_curr[:3, 3] - T_WC_first[:3, 3])
             if translation_dist <= self.config.filter_threshold:
                 continue
 
+            X = (point_4d[:3] / point_4d[3].flatten()).flatten()
             ray1 = X - T_WC_first[:3, 3]
             ray2 = X - T_WC_curr[:3, 3]
             cos_angle = np.dot(ray1, ray2) / (

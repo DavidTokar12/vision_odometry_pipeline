@@ -7,7 +7,9 @@ import numpy as np
 
 
 class ImageSequence:
-    def __init__(self, dataset_id: int, last_frame: int | None = None):
+    def __init__(
+        self, dataset_id: int, first_frame: int = 0, last_frame: int | None = None
+    ):
         """
         Initialize the DataLoader.
 
@@ -16,7 +18,10 @@ class ImageSequence:
             last_frame (int, optional): Overwrite the default last frame limit.
         """
         self.dataset_id = dataset_id
-        self.current_idx = 0
+        self.current_idx = first_frame
+
+        if not first_frame < last_frame:
+            raise ValueError("first_frame must by strictly smaller than last_frame")
 
         # Base paths
         self.base_path = "/workspaces/vision_odometry_pipeline"
@@ -85,7 +90,7 @@ class ImageSequence:
             full_gt = np.loadtxt(gt_path)
             self.ground_truth = full_gt[:, [-9, -1]]  # x and z coordinates
 
-        self.last_frame = last_frame if last_frame is not None else 4540
+        self.last_frame = last_frame if last_frame is not None else 2760
 
     def _setup_malaga(self, last_frame):
         if not os.path.exists(self.malaga_path):

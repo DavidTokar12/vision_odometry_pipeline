@@ -10,10 +10,13 @@ from vision_odometry_pipeline.vo_runner import VoRunner
 def main():
     # 0: Parking, 1: KITTI, 2: Malaga
     dataset_selection = 1
-    image_range = 400
+    first_frame = 0
+    last_frame = 500
 
     # Initialize DataLoader
-    sequence = ImageSequence(dataset_id=dataset_selection, last_frame=image_range)
+    sequence = ImageSequence(
+        dataset_id=dataset_selection, first_frame=first_frame, last_frame=last_frame
+    )
 
     print("Initializing VO Runner...")
     runner = VoRunner(
