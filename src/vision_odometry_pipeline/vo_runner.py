@@ -25,6 +25,7 @@ class VoRunner:
         self,
         K: np.ndarray,
         D: np.ndarray,
+        initial_frame: int,
         debug: bool = False,
         debug_output: str | Path | None = None,
     ):
@@ -38,7 +39,7 @@ class VoRunner:
         self._state = VoState()
         self._trajectory: list[np.ndarray] = []
         self._timings: dict[str, list[float]] = {}
-        self._frame_idx = 0
+        self._frame_idx = initial_frame
 
         # --- Initialization Setup
         self.pipeline_initialization = PipelineInitialization(K, D)

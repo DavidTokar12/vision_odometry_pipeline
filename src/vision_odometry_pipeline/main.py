@@ -10,7 +10,7 @@ from vision_odometry_pipeline.vo_runner import VoRunner
 def main():
     # 0: Parking, 1: KITTI, 2: Malaga
     dataset_selection = 1
-    first_frame = 0
+    first_frame = 100
     last_frame = 500
 
     # Initialize DataLoader
@@ -20,7 +20,11 @@ def main():
 
     print("Initializing VO Runner...")
     runner = VoRunner(
-        K=sequence.K, D=sequence.D, debug=True, debug_output=sequence.debug_output
+        K=sequence.K,
+        D=sequence.D,
+        initial_frame=first_frame,
+        debug=True,
+        debug_output=sequence.debug_output,
     )
 
     # Initialize Recorder
