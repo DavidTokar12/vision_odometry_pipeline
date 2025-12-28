@@ -90,47 +90,7 @@ class ReplenishmentStep(VoStep):
                     if pts is not None:
                         # Additional Harris response filtering for even more selectivity
                         if self.config.use_harris and self.config.harris_threshold > 0:
-                            pts = pts.reshape(-1, 2)
-                            # Compute Harris response for each point
-                            harris_responses = []
-                            for pt in pts:
-                                x_local = int(pt[0])
-                                y_local = int(pt[1])
-                                # Extract small window around point
-                                window_size = self.config.block_size
-                                half_w = window_size // 2
-                                y1 = max(0, y_local - half_w)
-                                y2 = min(img_roi.shape[0], y_local + half_w + 1)
-                                x1 = max(0, x_local - half_w)
-                                x2 = min(img_roi.shape[1], x_local + half_w + 1)
-
-                                if y2 > y1 and x2 > x1:
-                                    window = img_roi[y1:y2, x1:x2]
-                                    # Compute Harris response
-                                    Ix = cv2.Sobel(window, cv2.CV_64F, 1, 0, ksize=3)
-                                    Iy = cv2.Sobel(window, cv2.CV_64F, 0, 1, ksize=3)
-                                    Ixx = np.mean(Ix * Ix)
-                                    Iyy = np.mean(Iy * Iy)
-                                    Ixy = np.mean(Ix * Iy)
-                                    det = Ixx * Iyy - Ixy * Ixy
-                                    trace = Ixx + Iyy
-                                    response = det - self.config.harris_k * (trace**2)
-                                    harris_responses.append(response)
-                                else:
-                                    harris_responses.append(0.0)
-
-                            # Normalize responses and filter
-                            if len(harris_responses) > 0:
-                                max_response = max(harris_responses)
-                                if max_response > 0:
-                                    normalized_responses = (
-                                        np.array(harris_responses) / max_response
-                                    )
-                                    valid_mask = (
-                                        normalized_responses
-                                        > self.config.harris_threshold
-                                    )
-                                    pts = pts[valid_mask]
+                            pts = self._filter_by_harris_response(pts, img_roi)
                         else:
                             pts = pts.reshape(-1, 2)
 
@@ -166,6 +126,49 @@ class ReplenishmentStep(VoStep):
             vis = self._visualize_new_features(curr_img, mask, keypoints)
 
         return full_C, full_F, full_T, vis
+
+    def _filter_by_harris_response(
+        self, pts: np.ndarray, img_roi: np.ndarray
+    ) -> np.ndarray:
+        pts = pts.reshape(-1, 2)
+        # Compute Harris response for each point
+        harris_responses = []
+        for pt in pts:
+            x_local = int(pt[0])
+            y_local = int(pt[1])
+            # Extract small window around point
+            window_size = self.config.block_size
+            half_w = window_size // 2
+            y1 = max(0, y_local - half_w)
+            y2 = min(img_roi.shape[0], y_local + half_w + 1)
+            x1 = max(0, x_local - half_w)
+            x2 = min(img_roi.shape[1], x_local + half_w + 1)
+
+            if y2 > y1 and x2 > x1:
+                window = img_roi[y1:y2, x1:x2]
+                # Compute Harris response
+                Ix = cv2.Sobel(window, cv2.CV_64F, 1, 0, ksize=3)
+                Iy = cv2.Sobel(window, cv2.CV_64F, 0, 1, ksize=3)
+                Ixx = np.mean(Ix * Ix)
+                Iyy = np.mean(Iy * Iy)
+                Ixy = np.mean(Ix * Iy)
+
+                det = Ixx * Iyy - Ixy * Ixy
+                trace = Ixx + Iyy
+                response = det - self.config.harris_k * (trace**2)
+                harris_responses.append(response)
+            else:
+                harris_responses.append(0.0)
+
+        # Normalize responses and filter
+        if len(harris_responses) > 0:
+            max_response = max(harris_responses)
+            if max_response > 0:
+                normalized_responses = np.array(harris_responses) / max_response
+                valid_mask = normalized_responses > self.config.harris_threshold
+                return pts[valid_mask]
+
+        return pts
 
     def _visualize_new_features(self, img, mask, new_pts):
         vis = cv2.cvtColor(img, cv2.COLOR_GRAY2BGR)
