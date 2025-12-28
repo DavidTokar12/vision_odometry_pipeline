@@ -68,21 +68,20 @@ class TriangulationStep(VoStep):
 
             # 2. Angle Check (Parallax)
             # If motion is not dominant translation, check angle
-            if (
-                np.linalg.norm(T_WC_curr[:3, 3] - T_WC_first[:3, 3])
-                > self.config.filter_threshold
-            ):
-                ray1 = X - T_WC_first[:3, 3]
-                ray2 = X - T_WC_curr[:3, 3]
-                cos_angle = np.dot(ray1, ray2) / (
-                    np.linalg.norm(ray1) * np.linalg.norm(ray2)
-                )
+            translation_dist = np.linalg.norm(T_WC_curr[:3, 3] - T_WC_first[:3, 3])
+            if translation_dist <= self.config.filter_threshold:
+                continue
 
-                # If angle too small, STOP.
-                # CRITICAL FIX: DO NOT set keep_mask[idx]=False.
-                # We keep it in Candidate list to wait for more parallax.
-                if abs(cos_angle) >= self.max_cos_angle:
-                    continue
+            ray1 = X - T_WC_first[:3, 3]
+            ray2 = X - T_WC_curr[:3, 3]
+            cos_angle = np.dot(ray1, ray2) / (
+                np.linalg.norm(ray1) * np.linalg.norm(ray2)
+            )
+
+            # If angle too small, STOP.
+            # We keep it in Candidate list to wait for more parallax.
+            if abs(cos_angle) >= self.max_cos_angle:
+                continue
 
             # 3. Cheirality (Behind camera?)
             X_local = R_CW_curr @ X + t_CW_curr.flatten()
