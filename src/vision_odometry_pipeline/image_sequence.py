@@ -20,9 +20,6 @@ class ImageSequence:
         self.dataset_id = dataset_id
         self.current_idx = first_frame
 
-        if not first_frame < last_frame:
-            raise ValueError("first_frame must by strictly smaller than last_frame")
-
         # Base paths
         self.base_path = "/workspaces/vision_odometry_pipeline"
         self.kitti_path = os.path.join(self.base_path, "data/kitti")
@@ -46,6 +43,9 @@ class ImageSequence:
             self._setup_malaga(last_frame)
         else:
             raise ValueError(f"Invalid dataset id: {dataset_id}")
+
+        if not first_frame < self.last_frame:
+            raise ValueError("first_frame must by strictly smaller than last_frame")
 
         # Ensure output directory exists
         if self.debug_output:
