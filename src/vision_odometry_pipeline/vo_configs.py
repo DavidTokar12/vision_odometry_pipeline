@@ -8,7 +8,7 @@ class KeypointTrackingConfig:
     """Configuration for KLT Optical Flow tracking."""
 
     win_size: tuple[int, int] = (23, 23)  # Window size for LK optical flow
-    max_level: int = 3  # Number of pyramid levels
+    max_level: int = 4  # Number of pyramid levels
     # Termination criteria: (Type, Max_Iter, Epsilon)
     criteria: tuple = (cv2.TERM_CRITERIA_EPS | cv2.TERM_CRITERIA_COUNT, 30, 0.03)
 
@@ -72,6 +72,13 @@ class PoseEstimationConfig:
     iterations_count: int = 100  # Max RANSAC iterations
     pnp_flags: int = cv2.SOLVEPNP_P3P  # PnP Method (P3P is fast for minimal sets)
 
+    # --- Least Square ----
+    # Robust loss function (linear for errors > f_scale), default is "linear"
+    # Options: 'linear' (default/brittle), 'huber', 'soft_l1', 'cauchy', 'arctan'
+    refinement_loss: str = "huber"
+    # Outlier threshold in pixels. Ignored if loss is 'linear'.
+    refinement_f_scale: float = 1.0
+
 
 @dataclass
 class ReplenishmentConfig:
@@ -81,21 +88,24 @@ class ReplenishmentConfig:
 
     # --- Feature Detection (Shi-Tomasi/Harris) ---
     max_features: int = 1500  # Target total number of active features in the system
-    min_dist: int = 7  # Minimum pixel distance between features
+    min_dist: int = 10  # Minimum pixel distance between features
     quality_level: float = 0.04  # Corner quality level (0.0 to 1.0)
     block_size: int = 3  # Block size for corner computation
     mask_radius: int = (
-        7  # Radius around existing points to mask out (usually same as min_dist)
+        10  # Radius around existing points to mask out (usually same as min_dist)
     )
     use_harris: bool = (
-        False  # Use Harris detector instead of Shi-Tomasi (more selective)
+        True  # Use Harris detector instead of Shi-Tomasi (more selective)
     )
     harris_k: float = 0.04  # Harris detector free parameter
-    harris_threshold: float = 0.1  # Minimum Harris response (filters weak corners)
+    harris_threshold: float = 0.2  # Minimum Harris response (filters weak corners)
 
-    # --- Tile based replenishment ---
-    grid_rows: int = 5  # Number of rows for feature grid
-    grid_cols: int = 5  # Number of cols for feature grid
+    # --- Spatial Distribution (Bucketing) ---
+    grid_rows: int = 4
+    grid_cols: int = 5
+
+    cell_cap_multiplier = 1.1
+    global_feature_multiplier = 8
 
 
 @dataclass
@@ -104,18 +114,13 @@ class TriangulationConfig:
 
     # --- Candidate Selection ---
     min_pixel_dist: float = (
-        4.0  # Min pixel displacement before attempting triangulation
+        3.0  # Min pixel displacement before attempting triangulation
     )
 
     # --- Geometric Filtering ---
-    min_angle_deg: float = 1.2  # Minimum triangulation angle (degrees)
+    min_angle_deg: float = 1.7  # Minimum triangulation angle (degrees)
     filter_threshold: float = (
         0.06  # Translation threshold to skip angle check (forward motion assumption)
     )
-    max_depth: float = (
-        300.0  # Maximum allowed depth (meters) to prevent unstable points
-    )
+    max_depth: float = 80.0  # Maximum allowed depth (meters) to prevent unstable points
     min_depth: float = 0.0  # Points must be in front of camera
-
-    # --- Math Stability ---
-    infinity_threshold: float = 1e-6  # Threshold for w component in homogeneous coords

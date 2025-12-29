@@ -1,6 +1,7 @@
 # Project data
 data/
 **.zip
+temp/
 
 # Project outputs
 debug_output/

@@ -23,94 +23,102 @@ class ReplenishmentStep(VoStep):
             (Full_C, Full_F, Full_T, Vis)
         """
         curr_img = state.image_buffer.curr
+        h, w = curr_img.shape
 
-        # 1. Masking
-        mask = np.full(curr_img.shape, 255, dtype=np.uint8)
+        # Grid Configuration
+        n_rows = self.config.grid_rows
+        n_cols = self.config.grid_cols
+        dy = h // n_rows
+        dx = w // n_cols
+        n_bins = n_rows * n_cols
+
+        # Define Caps: Allow 1.5x overflow to prioritize quality over strict uniformity
+        avg_features_per_cell = self.config.max_features / n_bins
+        cap_per_cell = int(avg_features_per_cell * self.config.cell_cap_multiplier)
+
+        # Count Existing Features and map them to their grid bin ID
+        grid_counts = np.zeros(n_bins, dtype=int)
         all_pts = np.vstack([state.P, state.C]) if len(state.C) > 0 else state.P
+
+        if len(all_pts) > 0:
+            cx = (all_pts[:, 0] // dx).astype(int)
+            cy = (all_pts[:, 1] // dy).astype(int)
+            cx = np.clip(cx, 0, n_cols - 1)
+            cy = np.clip(cy, 0, n_rows - 1)
+            bin_ids = cy * n_cols + cx
+            np.add.at(grid_counts, bin_ids, 1)
+
+        # Masking out already existing points
+        mask = np.full(curr_img.shape, 255, dtype=np.uint8)
         if len(all_pts) > 0:
             for pt in all_pts:
                 cv2.circle(
                     mask, (int(pt[0]), int(pt[1])), self.config.mask_radius, 0, -1
                 )
 
-        # 2. Detection
-        h, w = curr_img.shape
-        # Calculate target features per cell
-        n_cells = self.config.grid_rows * self.config.grid_cols
-        features_per_cell = int(self.config.max_features / n_cells)
+        n_needed = self.config.max_features - len(all_pts)
+        if not n_needed > 0:
+            return state.C, state.F, state.T_first, None
 
-        w_step = w // self.config.grid_cols
-        h_step = h // self.config.grid_rows
+        # Global Detection
+        candidates = cv2.goodFeaturesToTrack(
+            curr_img,
+            mask=mask,
+            maxCorners=self.config.max_features * self.config.global_feature_multiplier,
+            qualityLevel=self.config.quality_level,
+            minDistance=self.config.min_dist,
+            blockSize=self.config.block_size,
+            useHarrisDetector=self.config.use_harris,
+            k=self.config.harris_k,
+        )
 
-        new_keypoints_list = []
+        if candidates is None:
+            return state.C, state.F, state.T_first, None
 
-        for r in range(self.config.grid_rows):
-            for c in range(self.config.grid_cols):
-                # Define ROI limits
-                x_start, x_end = c * w_step, (c + 1) * w_step
-                y_start, y_end = r * h_step, (r + 1) * h_step
+        candidates = candidates.reshape(-1, 2)
 
-                # Adjust last row/col to cover remainder
-                if c == self.config.grid_cols - 1:
-                    x_end = w
-                if r == self.config.grid_rows - 1:
-                    y_end = h
+        keypoints = np.empty((0, 2))
 
-                # Count existing points in this cell
-                in_region = (
-                    (
-                        (all_pts[:, 0] >= x_start)
-                        & (all_pts[:, 0] < x_end)
-                        & (all_pts[:, 1] >= y_start)
-                        & (all_pts[:, 1] < y_end)
-                    )
-                    if len(all_pts) > 0
-                    else []
-                )
+        # Map candidates to bins
+        c_idx = (candidates[:, 0] // dx).astype(int)
+        r_idx = (candidates[:, 1] // dy).astype(int)
+        c_idx = np.clip(c_idx, 0, n_cols - 1)
+        r_idx = np.clip(r_idx, 0, n_rows - 1)
+        cand_bins = r_idx * n_cols + c_idx  # Vector holding bin IDs for every candidate
 
-                n_existing = np.sum(in_region)
-                n_needed_cell = features_per_cell - n_existing
+        # Sort by bin ID (Stable sort preserves quality order within bins)
+        sort_idx = np.argsort(cand_bins, kind="stable")  # idx of cand's grouped by bin
+        sorted_bins = cand_bins[sort_idx]  # candidates grouped by bin
 
-                if n_needed_cell > 0:
-                    # Extract ROI from image and mask
-                    img_roi = curr_img[y_start:y_end, x_start:x_end]
-                    mask_roi = mask[y_start:y_end, x_start:x_end]
+        # Determine Rank within Bin
+        # Find indices where the bin ID changes
+        unique_bins, run_starts = np.unique(sorted_bins, return_index=True)
+        ranks = np.zeros(len(candidates), dtype=int)
 
-                    pts = cv2.goodFeaturesToTrack(
-                        img_roi,
-                        mask=mask_roi,
-                        maxCorners=n_needed_cell,
-                        qualityLevel=self.config.quality_level,
-                        minDistance=self.config.min_dist,
-                        blockSize=self.config.block_size,
-                        useHarrisDetector=self.config.use_harris,
-                        k=self.config.harris_k,
-                    )
+        for i, _ in enumerate(unique_bins):
+            start = run_starts[i]
+            end = run_starts[i + 1] if i + 1 < len(unique_bins) else len(candidates)
+            count = end - start
+            ranks[sort_idx[start:end]] = np.arange(count)
 
-                    if pts is not None:
-                        # Additional Harris response filtering for even more selectivity
-                        if self.config.use_harris and self.config.harris_threshold > 0:
-                            pts = self._filter_by_harris_response(pts, img_roi)
-                        else:
-                            pts = pts.reshape(-1, 2)
+        # Calculate how many spots are left in each candidate's bin
+        available_space = np.maximum(0, cap_per_cell - grid_counts)  # len: num. bins
 
-                        if len(pts) > 0:
-                            # Convert to global coordinates
-                            pts[:, 0] += x_start
-                            pts[:, 1] += y_start
-                            new_keypoints_list.append(pts)
+        # Only keep points whose rank fits in the available space
+        keep_mask = ranks < available_space[cand_bins]  # len: num. candidates
+        keypoints = candidates[keep_mask]  # len: num. needed points
 
-        if new_keypoints_list:
-            keypoints = np.vstack(new_keypoints_list)
-        else:
-            keypoints = np.empty((0, 2), dtype=np.float32)
+        # Truncate if we exceeded the hard global limit
+        total_current = len(all_pts)
+        if total_current + len(keypoints) > self.config.max_features:
+            needed = self.config.max_features - total_current
+            keypoints = keypoints[:needed] if needed > 0 else np.empty((0, 2))
 
-        # 3. Data Stacking
+        # Data Stacking
         if len(keypoints) > 0:
             full_C = np.vstack([state.C, keypoints])
             full_F = np.vstack([state.F, keypoints])  # F is current pixel loc
 
-            # Tile the current pose for the new candidates
             # Assuming state.pose is 4x4, we flatten the top 3x4 (R|t) to 12
             pose_3x4 = state.pose[:3, :].flatten()
             tiled_poses = np.tile(pose_3x4, (len(keypoints), 1))
@@ -124,51 +132,13 @@ class ReplenishmentStep(VoStep):
         vis = None
         if debug:
             vis = self._visualize_new_features(curr_img, mask, keypoints)
+            # Draw Grid Lines
+            for i in range(1, n_cols):
+                cv2.line(vis, (i * dx, 0), (i * dx, h), (50, 50, 50), 1)
+            for i in range(1, n_rows):
+                cv2.line(vis, (0, i * dy), (w, i * dy), (50, 50, 50), 1)
 
         return full_C, full_F, full_T, vis
-
-    def _filter_by_harris_response(
-        self, pts: np.ndarray, img_roi: np.ndarray
-    ) -> np.ndarray:
-        pts = pts.reshape(-1, 2)
-        # Compute Harris response for each point
-        harris_responses = []
-        for pt in pts:
-            x_local = int(pt[0])
-            y_local = int(pt[1])
-            # Extract small window around point
-            window_size = self.config.block_size
-            half_w = window_size // 2
-            y1 = max(0, y_local - half_w)
-            y2 = min(img_roi.shape[0], y_local + half_w + 1)
-            x1 = max(0, x_local - half_w)
-            x2 = min(img_roi.shape[1], x_local + half_w + 1)
-
-            if y2 > y1 and x2 > x1:
-                window = img_roi[y1:y2, x1:x2]
-                # Compute Harris response
-                Ix = cv2.Sobel(window, cv2.CV_64F, 1, 0, ksize=3)
-                Iy = cv2.Sobel(window, cv2.CV_64F, 0, 1, ksize=3)
-                Ixx = np.mean(Ix * Ix)
-                Iyy = np.mean(Iy * Iy)
-                Ixy = np.mean(Ix * Iy)
-
-                det = Ixx * Iyy - Ixy * Ixy
-                trace = Ixx + Iyy
-                response = det - self.config.harris_k * (trace**2)
-                harris_responses.append(response)
-            else:
-                harris_responses.append(0.0)
-
-        # Normalize responses and filter
-        if len(harris_responses) > 0:
-            max_response = max(harris_responses)
-            if max_response > 0:
-                normalized_responses = np.array(harris_responses) / max_response
-                valid_mask = normalized_responses > self.config.harris_threshold
-                return pts[valid_mask]
-
-        return pts
 
     def _visualize_new_features(self, img, mask, new_pts):
         vis = cv2.cvtColor(img, cv2.COLOR_GRAY2BGR)

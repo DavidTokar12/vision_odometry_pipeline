@@ -121,6 +121,8 @@ class PoseEstimationStep(VoStep):
             x_scale="jac",  # Auto-scale variables
             ftol=1e-4,  # Stop when error change is tiny
             method="trf",  # Trust Region Reflective (robust)
+            loss=self.config.refinement_loss,  # Loss function
+            f_scale=self.config.refinement_f_scale,  # Outlier threshold
             args=(points_3d, points_2d, self.K),
         )
 
