@@ -60,7 +60,7 @@ class TriangulationStep(VoStep):
             point_4d = cv2.triangulatePoints(M1, M2, pt1, pt2)
 
             # 1. Filter points at infinity
-            if abs(point_4d[3]) < self.config.infinity_threshold:
+            if abs(point_4d[3]) < self.config.min_depth:
                 keep_mask[idx] = False  # Garbage
                 continue
 

@@ -24,9 +24,14 @@ logging.getLogger("matplotlib.axes._base").setLevel(logging.ERROR)
 
 
 class VoRecorder:
-    def __init__(self, output_path: str, frame_rate: int = 20):
+    def __init__(
+        self, output_path: str, frame_rate: int = 20, plot_ground_truth: bool = False
+    ):
         self.output_path = output_path
         self.frame_rate = frame_rate
+        self.plot_ground_truth = plot_ground_truth
+        self.ground_truth = None  # Will be set via set_ground_truth()
+        self.first_frame = None  # Track starting frame for GT alignment
 
         # Tracking state history
         self.landmark_history: list[int] = []
@@ -63,7 +68,20 @@ class VoRecorder:
 
         self.ax_img.axis("off")
 
+    def set_ground_truth(self, ground_truth: np.ndarray | None):
+        """
+        Set the ground truth trajectory for plotting.
+
+        Args:
+            ground_truth: Array of shape (N, 2) containing x and z coordinates
+        """
+        self.ground_truth = ground_truth
+
     def update(self, state: VoState, full_trajectory: np.ndarray):
+        # Track the first frame for ground truth alignment
+        if self.first_frame is None:
+            self.first_frame = state.frame_id
+        
         self.frame_count += 1
         num_landmarks = len(state.P)
         self.landmark_history.append(num_landmarks)
@@ -151,6 +169,23 @@ class VoRecorder:
                     label="Landmarks",
                 )
 
+            # Plot Ground Truth (Local)
+            if self.plot_ground_truth and self.ground_truth is not None:
+                # Use actual frame IDs for proper GT alignment
+                current_frame = state.frame_id
+                start_frame = max(self.first_frame, current_frame - lookback + 1)
+                end_frame = current_frame + 1
+                
+                if end_frame <= len(self.ground_truth):
+                    gt_local = self.ground_truth[start_frame:end_frame]
+                    self.ax_local.plot(
+                        gt_local[:, 0],
+                        gt_local[:, 1],
+                        "r--",
+                        linewidth=1.5,
+                        label="Ground Truth",
+                    )
+
             # Dynamic view scaling based on movement
             radius_x = max(abs(tx[0] - tx[-1]) * 1.5, 5)
             radius_y = max(abs(tz[0] - tz[-1]) * 1.5, 5)
@@ -183,7 +218,26 @@ class VoRecorder:
         if len(full_trajectory) > 0:
             all_tx = full_trajectory[:, 0, 3]
             all_tz = full_trajectory[:, 2, 3]
-            self.ax_full.plot(all_tx, all_tz, "b-", linewidth=1)
+            self.ax_full.plot(all_tx, all_tz, "b-", linewidth=1, label="Estimated")
+
+            # Plot Ground Truth (Full)
+            if self.plot_ground_truth and self.ground_truth is not None:
+                # Show ground truth from first_frame to current_frame using actual frame IDs
+                start_frame = self.first_frame
+                end_frame = state.frame_id + 1
+                
+                if end_frame <= len(self.ground_truth):
+                    gt_full = self.ground_truth[start_frame:end_frame]
+                    self.ax_full.plot(
+                        gt_full[:, 0],
+                        gt_full[:, 1],
+                        "r--",
+                        linewidth=1.5,
+                        label="Ground Truth",
+                    )
+
+            if self.plot_ground_truth:
+                self.ax_full.legend(loc="best", fontsize="small")
 
         # ---------------------------------------------------------
         # Render & Write to Video
