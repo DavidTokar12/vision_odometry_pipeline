@@ -13,7 +13,7 @@ class KeypointTrackingConfig:
     criteria: tuple = (cv2.TERM_CRITERIA_EPS | cv2.TERM_CRITERIA_COUNT, 30, 0.03)
 
     bidirectional_error: float = (
-        1.5  # Threshold for forward-backward consistency check (pixels)
+        2.0  # Threshold for forward-backward consistency check (pixels)
     )
 
 
@@ -88,23 +88,23 @@ class ReplenishmentConfig:
 
     # --- Feature Detection (Shi-Tomasi/Harris) ---
     max_features: int = 1500  # Target total number of active features in the system
-    min_dist: int = 10  # Minimum pixel distance between features
-    quality_level: float = 0.04  # Corner quality level (0.0 to 1.0)
+    min_dist: int = 7  # Minimum pixel distance between features
+    quality_level: float = 0.01  # Corner quality level (0.0 to 1.0)
     block_size: int = 3  # Block size for corner computation
     mask_radius: int = (
-        10  # Radius around existing points to mask out (usually same as min_dist)
+        7  # Radius around existing points to mask out (usually same as min_dist)
     )
     use_harris: bool = (
-        True  # Use Harris detector instead of Shi-Tomasi (more selective)
+        False  # Use Harris detector instead of Shi-Tomasi (more selective)
     )
     harris_k: float = 0.04  # Harris detector free parameter
     harris_threshold: float = 0.2  # Minimum Harris response (filters weak corners)
 
     # --- Spatial Distribution (Bucketing) ---
-    grid_rows: int = 4
-    grid_cols: int = 5
+    grid_rows: int = 7
+    grid_cols: int = 7
 
-    cell_cap_multiplier = 1.1
+    cell_cap_multiplier = 1.2
     global_feature_multiplier = 8
 
 
@@ -119,8 +119,7 @@ class TriangulationConfig:
 
     # --- Geometric Filtering ---
     min_angle_deg: float = 1.7  # Minimum triangulation angle (degrees)
-    filter_threshold: float = (
-        0.06  # Translation threshold to skip angle check (forward motion assumption)
+    max_depth: float = (
+        150.0  # Maximum allowed depth (meters) to prevent unstable points
     )
-    max_depth: float = 80.0  # Maximum allowed depth (meters) to prevent unstable points
     min_depth: float = 0.0  # Points must be in front of camera

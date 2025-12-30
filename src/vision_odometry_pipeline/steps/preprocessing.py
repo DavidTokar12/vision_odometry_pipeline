@@ -28,6 +28,13 @@ class ImagePreprocessingStep(VoStep):
         x, y, w, h = self.roi
         gray_undistorted = gray_undistorted[y : y + h, x : x + w]
 
+        if False:
+            clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
+            gray_undistorted = clahe.apply(gray_undistorted)
+
+            # Optional: Mild blur to reduce noise amplified by CLAHE
+            gray_undistorted = cv2.GaussianBlur(gray_undistorted, (3, 3), 0)
+
         # Optional: Equalize Hist
         if False:
             gray_undistorted = cv2.equalizeHist(gray_undistorted)
