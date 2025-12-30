@@ -123,3 +123,21 @@ class TriangulationConfig:
         150.0  # Maximum allowed depth (meters) to prevent unstable points
     )
     min_depth: float = 0.0  # Points must be in front of camera
+
+
+@dataclass
+class LocalBundleAdjustmentConfig:
+    """Configuration for Local Bundle Adjustment."""
+
+    window_size: int = 5  # Number of frames in sliding window
+
+    # Solver constraints
+    max_nfev: int = 7  # Max solver iterations per frame (Speed control)
+    ftol: float = 1e-3  # Convergence tolerance
+
+    # Outlier rejection
+    loss_function: str = "huber"  # Robust loss
+    f_scale: float = 0.8  # Outlier threshold in pixels
+
+    # Post-optimization cleaning
+    max_reproj_error: float = 3.0  # Points with error > 3.0px after BA are deleted

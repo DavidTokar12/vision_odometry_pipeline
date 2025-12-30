@@ -70,7 +70,7 @@ class VoRunner:
             self.pose_est = PoseEstimationStep(K=new_K)
             self.triangulation = TriangulationStep(K=new_K)
             self.replenishment = ReplenishmentStep()
-            self.local_ba = LocalBundleAdjustmentStep(K=new_K, window_size=10)
+            self.local_ba = LocalBundleAdjustmentStep(K=new_K)
 
             # --- Preprocess Image ---
             self._state.image_buffer.update(image)
@@ -208,9 +208,7 @@ class VoRunner:
             t0 = time.perf_counter()
 
             # Run Optimization
-            opt_pose, opt_P, opt_X, vis_ba = self.local_ba.process(
-                self._state, self._debug
-            )
+            opt_pose, opt_P, opt_X, _ = self.local_ba.process(self._state, self._debug)
             self._record_timing("05_LocalBA", t0)
 
             self._state = replace(
@@ -219,7 +217,6 @@ class VoRunner:
                 P=opt_P,
                 X=opt_X,  # Update with optimized structure
             )
-            # (Optional) self._save_debug(current_debug_dir, "05_LocalBA", vis_ba)
 
             # ---------------------------------------------------------
             # STEP 5: Replenishment (New Candidates)

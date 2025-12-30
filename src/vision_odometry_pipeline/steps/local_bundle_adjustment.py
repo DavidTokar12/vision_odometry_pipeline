@@ -8,8 +8,9 @@ import cv2
 import numpy as np
 
 from scipy.optimize import least_squares
-from scipy.sparse import lil_matrix
+from scipy.sparse import coo_matrix
 
+from vision_odometry_pipeline.vo_configs import LocalBundleAdjustmentConfig
 from vision_odometry_pipeline.vo_state import VoState
 from vision_odometry_pipeline.vo_step import VoStep
 
@@ -27,14 +28,90 @@ class WindowFrame:
     landmark_ids: np.ndarray  # Landmark IDs (N,)
 
 
+def _batched_rodrigues(r_vecs: np.ndarray) -> np.ndarray:
+    """
+    Vectorized implementation of Rodrigues' rotation formula.
+    Args:
+        r_vecs: (N, 3) array of rotation vectors.
+    Returns:
+        (N, 3, 3) array of rotation matrices.
+    """
+    theta = np.linalg.norm(r_vecs, axis=1, keepdims=True)  # (N, 1)
+
+    # Avoid division by zero for small angles
+    # For theta ~ 0, R ~ I + [r]_x. We use a mask to handle this safely.
+    with np.errstate(invalid="ignore", divide="ignore"):
+        k = r_vecs / theta
+
+    # Handle zero rotation vectors (theta is zero)
+    # We replace NaNs in k with 0 (or any value) because they will be zeroed out by sin/lines anyway,
+    # but strictly we should handle the identity case.
+    # A cleaner numerical approach is to compute coefficients.
+
+    # K = [k]_x skew symmetric matrix
+    K = np.zeros((r_vecs.shape[0], 3, 3))
+    K[:, 0, 1] = -k[:, 2]
+    K[:, 0, 2] = k[:, 1]
+    K[:, 1, 0] = k[:, 2]
+    K[:, 1, 2] = -k[:, 0]
+    K[:, 2, 0] = -k[:, 1]
+    K[:, 2, 1] = k[:, 0]
+
+    # Rodrigues formula: I + sin(theta)K + (1-cos(theta))K^2
+    I_matrix = np.eye(3).reshape(1, 3, 3)
+
+    # Fix NaNs for the zero-angle case (where theta=0 resulted in k=NaN)
+    # If theta is close to 0, limit tends to Identity.
+    # We apply the formula where theta > epsilon.
+
+    # Re-calculate cleanly to ensure 1000% stability
+    theta = theta.reshape(-1, 1, 1)
+    k_cos = 1 - np.cos(theta)
+    k_sin = np.sin(theta)
+
+    # Where theta is 0, these terms result in 0 update to Identity, which is correct.
+    # However, k has NaNs. We must zero out the update terms where theta is 0.
+    mask = theta > 1e-8
+
+    term1 = mask * k_sin * K
+    term2 = mask * k_cos * (K @ K)
+
+    return I_matrix + term1 + term2
+
+
+def _batched_skew_symmetric(v: np.ndarray) -> np.ndarray:
+    """
+    Computes skew-symmetric matrices for a batch of 3D vectors.
+    Args:
+        v: (N, 3) vectors
+    Returns:
+        (N, 3, 3) skew-symmetric matrices
+    """
+    N = v.shape[0]
+    z = np.zeros(N)
+    # [0, -z, y]
+    # [z, 0, -x]
+    # [-y, x, 0]
+
+    # We construct the 3x3 manually
+    # S[:, 0, 1] = -v[:, 2] etc...
+    # Stacking is cleaner for numpy
+
+    row0 = np.stack([z, -v[:, 2], v[:, 1]], axis=1)  # (N, 3)
+    row1 = np.stack([v[:, 2], z, -v[:, 0]], axis=1)
+    row2 = np.stack([-v[:, 1], v[:, 0], z], axis=1)
+
+    return np.stack([row0, row1, row2], axis=1)  # (N, 3, 3)
+
+
 class LocalBundleAdjustmentStep(VoStep):
-    def __init__(self, K: np.ndarray, window_size: int = 10):
+    def __init__(self, K: np.ndarray):
         super().__init__("LocalBundleAdjustment")
         self.K = K
-        self.window_size = window_size
+        self.config = LocalBundleAdjustmentConfig()
 
         # The sliding window buffer (deque efficiently handles pushes/pops)
-        self._window: deque[WindowFrame] = deque(maxlen=window_size)
+        self._window: deque[WindowFrame] = deque(maxlen=self.config.window_size)
 
         # Cache for optimized poses: frame_id -> T_WC (4x4)
         # This acts as the "marginalization" prior. When a frame moves from
@@ -70,39 +147,63 @@ class LocalBundleAdjustmentStep(VoStep):
         # A. Pack Parameters
         x0, pose_indices, landmark_indices = self._pack_parameters(valid_obs, valid_3d)
 
-        # B. Compute Sparsity Pattern
-        sparsity = self._compute_sparsity(
-            len(x0), pose_indices, landmark_indices, valid_obs
+        # C. Pre-compute Flat Arrays
+        (obs_u, obs_v, pt_x_indices, pose_x_indices, is_optimized_mask) = (
+            self._flatten_data_for_solver(valid_obs, pose_indices, landmark_indices)
         )
 
-        # C. Run Optimization
-        # We need the anchor pose (Frame 0) to remain fixed
+        # D. Run Optimization (Cached)
         anchor_frame = self._window[0]
-
-        # Ensure the anchor uses the BEST known pose (refined in previous steps),
-        # not the stale PnP guess from the snapshot.
         anchor_pose = self._optimized_poses.get(
             anchor_frame.frame_id, anchor_frame.pose
         )
 
+        # Cache Container: [last_x_ref, last_residuals, last_jacobian]
+        # We use a mutable list to let inner functions write to it
+        cache = [None, None, None]
+
+        def compute_common(x_in):
+            # Check if we already computed for this X
+            if cache[0] is not None and np.array_equal(x_in, cache[0]):
+                return
+
+            # Compute Both
+            r, J = self._compute_residuals_and_jacobian(
+                x_in,
+                obs_u,
+                obs_v,
+                pt_x_indices,
+                pose_x_indices,
+                is_optimized_mask,
+                anchor_pose,
+            )
+
+            # Update Cache
+            cache[0] = x_in
+            cache[1] = r
+            cache[2] = J
+
+        def fun_wrapper(x):
+            compute_common(x)
+            return cache[1]
+
+        def jac_wrapper(x):
+            compute_common(x)
+            return cache[2]
+
+        # Execute
         res = least_squares(
-            fun=self._calculate_residuals,
+            fun=fun_wrapper,
+            jac=jac_wrapper,  # <--- Pass the analytical Jacobian wrapper
             x0=x0,
-            jac_sparsity=sparsity,
             verbose=0,
             x_scale="jac",
-            ftol=1e-3,  # Loose tolerance for speed (real-time requirement)
-            method="trf",  # Trust Region Reflective
-            loss="huber",  # Robust loss function to ignore outliers
-            f_scale=1.5,  # Outlier threshold in pixels
-            args=(
-                pose_indices,
-                landmark_indices,
-                valid_obs,
-                anchor_pose,
-            ),
+            ftol=self.config.ftol,
+            max_nfev=self.config.max_nfev,
+            method="trf",
+            loss=self.config.loss_function,
+            f_scale=self.config.f_scale,
         )
-
         # D. Unpack and Update State
         new_pose, new_X = self._unpack_results(
             res.x, state, pose_indices, landmark_indices
@@ -175,138 +276,203 @@ class LocalBundleAdjustmentStep(VoStep):
 
         return new_pose, new_X
 
-    def _compute_sparsity(
-        self,
-        num_params: int,
-        pose_indices: dict[int, int],
-        landmark_indices: dict[int, int],
-        valid_observations: dict,
-    ):
-        """
-        Step 4: Compute the Jacobian Sparsity Matrix.
-
-        This defines which parameters affect which residuals.
-        1 means "Non-Zero Derivative" (Parameter affects Residual).
-        0 means "Zero Derivative" (Parameter does not affect Residual).
-        """
-        # Calculate total number of residuals (2 per observation: u and v)
-        total_observations = sum(len(obs) for obs in valid_observations.values())
-        num_residuals = total_observations * 2
-
-        # LIL format is efficient for constructing sparse matrices incrementally
-        sparsity = lil_matrix((num_residuals, num_params), dtype=int)
-
-        row_idx = 0
-
-        # IMPORTANT: Iterate in the EXACT same order as _calculate_residuals
-        # Order: Landmark -> Frame -> (u, v)
-
-        for lid, obs_list in valid_observations.items():
-            # Get the column indices for this landmark's parameters (3 columns)
-            lm_start_col = landmark_indices[lid]
-            lm_cols = [lm_start_col, lm_start_col + 1, lm_start_col + 2]
-
-            for frame_idx, _ in obs_list:
-                # --- Fill Landmark Columns ---
-                # The landmark position affects both u (row_idx) and v (row_idx+1)
-                sparsity[row_idx, lm_cols] = 1
-                sparsity[row_idx + 1, lm_cols] = 1
-
-                # --- Fill Pose Columns ---
-                # If frame is not the fixed anchor (0), its pose params affect residuals
-                if frame_idx in pose_indices:
-                    pose_start_col = pose_indices[frame_idx]
-                    # 6 pose parameters
-                    pose_cols = list(range(pose_start_col, pose_start_col + 6))
-
-                    sparsity[row_idx, pose_cols] = 1
-                    sparsity[row_idx + 1, pose_cols] = 1
-
-                # Move to next pair of residuals
-                row_idx += 2
-
-        return sparsity
-
-    def _calculate_residuals(
+    def _compute_residuals_and_jacobian(
         self,
         x: np.ndarray,
-        pose_indices: dict[int, int],
-        landmark_indices: dict[int, int],
-        valid_observations: dict,
+        obs_u: np.ndarray,
+        obs_v: np.ndarray,
+        pt_x_indices: np.ndarray,
+        pose_x_indices: np.ndarray,
+        is_optimized_mask: np.ndarray,
         fixed_anchor_pose: np.ndarray,
-    ) -> np.ndarray:
+    ):
         """
-        Step 3: The Cost Function.
-        Calculates the difference between projected and observed pixels.
-
-        Args:
-            x: Flattened optimization vector.
-            fixed_anchor_pose: T_WC of the oldest frame (Frame 0), which is NOT optimized.
+        Computes Residuals AND Jacobian simultaneously to reuse projection math.
         """
-        # 1. Unpack Camera Intrinsics
+        # --- 1. SETUP & RECOVER STATE (Identical to Residuals) ---
         fx, fy = self.K[0, 0], self.K[1, 1]
         cx, cy = self.K[0, 2], self.K[1, 2]
+        N = len(obs_u)
 
-        # 2. Pre-compute the Fixed Anchor Extrinsics (T_CW)
-        # We do this once because Frame 0 never changes during optimization.
+        # Gather Points
+        col_offsets = np.array([0, 1, 2])
+        gather_indices = pt_x_indices[:, None] + col_offsets[None, :]
+        points_3d = x[gather_indices]  # (N, 3)
+
+        # Gather Poses
         R_anchor_WC = fixed_anchor_pose[:3, :3]
         t_anchor_WC = fixed_anchor_pose[:3, 3]
-
-        # Invert to T_CW
         R_anchor_CW = R_anchor_WC.T
         t_anchor_CW = -R_anchor_CW @ t_anchor_WC
 
-        residuals = []
+        R_batch = np.tile(R_anchor_CW, (N, 1, 1))
+        t_batch = np.tile(t_anchor_CW, (N, 1))
 
-        # 3. Iterate over every valid constraint
-        # valid_observations is Dict[landmark_id, List[(frame_idx, obs_uv)]]
+        if np.any(is_optimized_mask):
+            opt_indices = pose_x_indices[is_optimized_mask]
+            pose_offsets = np.arange(6)
+            pose_gather = opt_indices[:, None] + pose_offsets[None, :]
+            pose_params = x[pose_gather]
+
+            r_vecs = pose_params[:, :3]
+            t_vecs = pose_params[:, 3:]
+            R_opt = _batched_rodrigues(r_vecs)
+
+            R_batch[is_optimized_mask] = R_opt
+            t_batch[is_optimized_mask] = t_vecs
+
+        # --- 2. PROJECT (Shared Computation) ---
+        # X_cam = R * X_w + t
+        X_cam = np.einsum("nij,nj->ni", R_batch, points_3d) + t_batch  # (N, 3)
+
+        z = X_cam[:, 2]
+        valid_depth = z > 1e-4
+        z_safe = np.where(valid_depth, z, 1.0)
+        inv_z = 1.0 / z_safe
+        inv_z2 = inv_z * inv_z
+
+        # Residuals
+        u_proj = fx * X_cam[:, 0] * inv_z + cx
+        v_proj = fy * X_cam[:, 1] * inv_z + cy
+        res_u = u_proj - obs_u
+        res_v = v_proj - obs_v
+
+        residuals = np.column_stack((res_u, res_v)).flatten()
+        # Heavy penalty for invalid depth
+        residuals[np.repeat(~valid_depth, 2)] = 100.0
+
+        # --- 3. ANALYTICAL JACOBIAN ---
+
+        # A. Projective Derivative (d_Projection / d_Xcam)
+        # J_proj is (N, 2, 3)
+        # [ fx/z   0   -fx*x/z^2 ]
+        # [  0    fy/z -fy*y/z^2 ]
+
+        J_proj = np.zeros((N, 2, 3))
+        J_proj[:, 0, 0] = fx * inv_z
+        J_proj[:, 0, 2] = -fx * X_cam[:, 0] * inv_z2
+        J_proj[:, 1, 1] = fy * inv_z
+        J_proj[:, 1, 2] = -fy * X_cam[:, 1] * inv_z2
+
+        # B. Landmark Derivative (d_Residual / d_PointWorld)
+        # Chain Rule: J_point = J_proj @ R_cw
+        # (N, 2, 3) @ (N, 3, 3) -> (N, 2, 3)
+        J_point = np.einsum("nij,njk->nik", J_proj, R_batch)
+
+        # C. Pose Derivative (d_Residual / d_Pose)
+        # Only calculated for optimized frames
+        # We need (M, 2, 6) where M is count of is_optimized_mask
+
+        if np.any(is_optimized_mask):
+            # Subset relevant matrices
+            J_proj_opt = J_proj[is_optimized_mask]  # (M, 2, 3)
+            X_cam_opt = X_cam[is_optimized_mask]  # (M, 3)
+
+            # 1. Translation Part (d_Xcam / d_t = Identity)
+            # J_trans = J_proj * I = J_proj
+            J_trans = J_proj_opt  # (M, 2, 3)
+
+            # 2. Rotation Part (d_Xcam / d_w = -[X_cam]_x)
+            # J_rot = J_proj @ -skew(X_cam)
+            skew_X = _batched_skew_symmetric(X_cam_opt)
+            J_rot = -np.einsum("nij,njk->nik", J_proj_opt, skew_X)  # (M, 2, 3)
+
+            # Combine [J_rot, J_trans] -> (M, 2, 6)
+            J_pose = np.concatenate([J_rot, J_trans], axis=2)
+
+        # --- 4. CONSTRUCT SPARSE MATRIX ---
+        # We build the COO matrix arrays
+
+        # Row Indices: 0, 0, 0... 1, 1, 1...
+        # Each observation i has 2 rows: 2*i, 2*i+1
+        obs_indices = np.arange(N)
+        rows_u = obs_indices * 2
+        rows_v = obs_indices * 2 + 1
+
+        # --- Fill Point Derivatives ---
+        # J_point is (N, 2, 3). Flattening:
+        # data order: [Pt0_u_x, Pt0_u_y, Pt0_u_z, Pt0_v_x, ... ]
+        data_pt = J_point.reshape(N * 6)
+
+        # Col Indices for Points
+        # pt_x_indices is start index. We need [idx, idx+1, idx+2]
+        # Repeat rows for 3 columns
+        rows_pt = np.repeat(np.stack([rows_u, rows_v], axis=1), 3, axis=1).flatten()
+        cols_pt = pt_x_indices[:, None] + np.arange(3)[None, :]  # (N, 3)
+        cols_pt = np.repeat(cols_pt, 2, axis=0).flatten()  # Repeat for u and v
+
+        # --- Fill Pose Derivatives ---
+        # Only for optimized frames
+        if np.any(is_optimized_mask):
+            M = np.sum(is_optimized_mask)
+            data_pose = J_pose.reshape(M * 12)  # 2 rows * 6 params
+
+            # Rows for poses
+            rows_u_opt = rows_u[is_optimized_mask]
+            rows_v_opt = rows_v[is_optimized_mask]
+            rows_pose = np.repeat(
+                np.stack([rows_u_opt, rows_v_opt], axis=1), 6, axis=1
+            ).flatten()
+
+            # Cols for poses
+            opt_pose_start = pose_x_indices[is_optimized_mask]  # (M,)
+            cols_pose = opt_pose_start[:, None] + np.arange(6)[None, :]  # (M, 6)
+            cols_pose = np.repeat(cols_pose, 2, axis=0).flatten()
+
+            # Concatenate All
+            all_data = np.concatenate([data_pt, data_pose])
+            all_rows = np.concatenate([rows_pt, rows_pose])
+            all_cols = np.concatenate([cols_pt, cols_pose])
+        else:
+            all_data = data_pt
+            all_rows = rows_pt
+            all_cols = cols_pt
+
+        jacobian = coo_matrix((all_data, (all_rows, all_cols)), shape=(N * 2, len(x)))
+
+        return residuals, jacobian
+
+    def _flatten_data_for_solver(
+        self,
+        valid_observations: dict,
+        pose_indices: dict[int, int],
+        landmark_indices: dict[int, int],
+    ):
+        """
+        Pre-computes flat arrays so the residual function performs NO Python loops.
+        """
+        obs_u_list = []
+        obs_v_list = []
+        pt_x_indices_list = []  # Indices in 'x' for 3D points
+        pose_x_indices_list = []  # Indices in 'x' for Poses
+        is_optimized_list = []  # Boolean: True if not Anchor
+
+        # Iterate in the exact same order as Sparsity
         for lid, obs_list in valid_observations.items():
-            # A. Retrieve Landmark 3D Position
             idx_pt = landmark_indices[lid]
-            point_3d = x[idx_pt : idx_pt + 3]  # (3,)
 
-            # B. Project into every observing frame
             for frame_idx, observed_uv in obs_list:
-                # --- Get Camera Extrinsics (R, t) ---
+                obs_u_list.append(observed_uv[0])
+                obs_v_list.append(observed_uv[1])
+                pt_x_indices_list.append(idx_pt)
+
                 if frame_idx == 0:
-                    # Use the Fixed Anchor
-                    R, t = R_anchor_CW, t_anchor_CW
+                    # Anchor Frame
+                    is_optimized_list.append(False)
+                    pose_x_indices_list.append(-1)  # Dummy value
                 else:
-                    # Retrieve from optimization vector 'x'
-                    idx_pose = pose_indices[frame_idx]
-                    pose_params = x[idx_pose : idx_pose + 6]
+                    # Optimized Frame
+                    is_optimized_list.append(True)
+                    pose_x_indices_list.append(pose_indices[frame_idx])
 
-                    r_vec = pose_params[:3]
-                    t_vec = pose_params[3:]
-
-                    # Convert Angle-Axis to Rotation Matrix
-                    R, _ = cv2.Rodrigues(r_vec)
-                    t = t_vec
-
-                # --- Projection Logic (Pinhole Model) ---
-                # X_cam = R * X_world + t
-                X_cam = R @ point_3d + t
-
-                # Check for invalid depth (behind camera) to avoid division by zero
-                # We penalize this heavily or just let the optimizer handle the large error
-                if X_cam[2] < 1e-4:
-                    residuals.append(100.0)
-                    residuals.append(100.0)
-                    continue
-
-                # Project to Pixel
-                inv_z = 1.0 / X_cam[2]
-                u_proj = fx * X_cam[0] * inv_z + cx
-                v_proj = fy * X_cam[1] * inv_z + cy
-
-                # --- Compute Error ---
-                res_u = u_proj - observed_uv[0]
-                res_v = v_proj - observed_uv[1]
-
-                residuals.append(res_u)
-                residuals.append(res_v)
-
-        return np.array(residuals)
+        # Convert to aligned NumPy arrays
+        return (
+            np.array(obs_u_list, dtype=np.float64),
+            np.array(obs_v_list, dtype=np.float64),
+            np.array(pt_x_indices_list, dtype=np.int32),
+            np.array(pose_x_indices_list, dtype=np.int32),
+            np.array(is_optimized_list, dtype=bool),
+        )
 
     def _pack_parameters(
         self,
@@ -378,7 +544,7 @@ class LocalBundleAdjustmentStep(VoStep):
         # A. Create Lookup for Current 3D Positions (ID -> XYZ)
         # We only optimize landmarks that are currently tracked (in state.X).
         # Lost landmarks are ignored as we don't store their 3D positions in history.
-        curr_map_3d = {lid: x for lid, x in zip(state.landmark_ids, state.X)}
+        curr_map_3d = curr_map_3d = dict(zip(state.landmark_ids, state.X, strict=True))
 
         # B. Collect Observations across the Window
         # Map: landmark_id -> list of (frame_index_in_window, (u, v))
@@ -422,7 +588,7 @@ class LocalBundleAdjustmentStep(VoStep):
         )
 
         # Handle Cleanup BEFORE appending (because maxlen will auto-pop)
-        if len(self._window) == self.window_size:
+        if len(self._window) == self.config.window_size:
             # The oldest frame (index 0) is about to fall off the edge
             removed_frame = self._window[0]
 
