@@ -13,6 +13,8 @@ def main():
     first_frame = 0
     last_frame = 250
 
+    # Enable/Disable Ground Truth Plotting
+    plot_ground_truth = True
     # Initialize DataLoader
     sequence = ImageSequence(
         dataset_id=dataset_selection, first_frame=first_frame, last_frame=last_frame
@@ -29,7 +31,12 @@ def main():
 
     # Initialize Recorder
     video_path = os.path.join(sequence.debug_output, "out.mp4")
-    recorder = VoRecorder(output_path=video_path)
+    recorder = VoRecorder(output_path=video_path, plot_ground_truth=plot_ground_truth)
+
+    # Set ground truth if available and plotting is enabled
+    if plot_ground_truth and sequence.ground_truth is not None:
+        recorder.set_ground_truth(sequence.ground_truth)
+        print(f"Ground truth loaded: {len(sequence.ground_truth)} poses")
 
     # Main Loop
     while not sequence.is_finished:

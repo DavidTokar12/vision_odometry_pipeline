@@ -8,7 +8,7 @@ class KeypointTrackingConfig:
     """Configuration for KLT Optical Flow tracking."""
 
     win_size: tuple[int, int] = (23, 23)  # Window size for LK optical flow
-    max_level: int = 4  # Number of pyramid levels
+    max_level: int = 5  # Number of pyramid levels
     # Termination criteria: (Type, Max_Iter, Epsilon)
     criteria: tuple = (cv2.TERM_CRITERIA_EPS | cv2.TERM_CRITERIA_COUNT, 30, 0.03)
 
@@ -69,7 +69,7 @@ class PoseEstimationConfig:
     # --- P3P RANSAC ---
     ransac_prob: float = 0.999
     repr_error: float = 2.0  # Max reprojection error for PnP inliers (pixels)
-    iterations_count: int = 100  # Max RANSAC iterations
+    iterations_count: int = 500  # Max RANSAC iterations
     pnp_flags: int = cv2.SOLVEPNP_P3P  # PnP Method (P3P is fast for minimal sets)
 
     # --- Least Square ----
@@ -87,7 +87,7 @@ class ReplenishmentConfig:
     """
 
     # --- Feature Detection (Shi-Tomasi/Harris) ---
-    max_features: int = 1500  # Target total number of active features in the system
+    max_features: int = 1000  # Target total number of active features in the system
     min_dist: int = 7  # Minimum pixel distance between features
     quality_level: float = 0.01  # Corner quality level (0.0 to 1.0)
     block_size: int = 3  # Block size for corner computation
@@ -98,14 +98,14 @@ class ReplenishmentConfig:
         False  # Use Harris detector instead of Shi-Tomasi (more selective)
     )
     harris_k: float = 0.04  # Harris detector free parameter
-    harris_threshold: float = 0.2  # Minimum Harris response (filters weak corners)
+    harris_threshold: float = 0.1  # Minimum Harris response (filters weak corners)
 
     # --- Spatial Distribution (Bucketing) ---
     grid_rows: int = 7
     grid_cols: int = 7
 
-    cell_cap_multiplier = 1.2
-    global_feature_multiplier = 8
+    cell_cap_multiplier = 1.5
+    global_feature_multiplier = 6
 
 
 @dataclass
@@ -114,12 +114,15 @@ class TriangulationConfig:
 
     # --- Candidate Selection ---
     min_pixel_dist: float = (
-        3.0  # Min pixel displacement before attempting triangulation
+        0.0  # Min pixel displacement before attempting triangulation
     )
 
     # --- Geometric Filtering ---
     min_angle_deg: float = 1.7  # Minimum triangulation angle (degrees)
-    max_depth: float = (
-        150.0  # Maximum allowed depth (meters) to prevent unstable points
+    filter_threshold: float = (
+        0.05  # Translation threshold to skip angle check (forward motion assumption)
     )
-    min_depth: float = 0.0  # Points must be in front of camera
+    max_depth: float = (
+        200.0  # Maximum allowed depth (meters) to prevent unstable points
+    )
+    min_depth: float = 1e-6  # Points must be in front of camera

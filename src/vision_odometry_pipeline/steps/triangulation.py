@@ -64,6 +64,7 @@ class TriangulationStep(VoStep):
                 keep_mask[idx] = False  # Garbage
                 continue
 
+            # 2. Angle Check (Parallax)
             X = (point_4d[:3] / point_4d[3].flatten()).flatten()
             v1 = X - T_WC_first[:3, 3]
             v2 = X - T_WC_curr[:3, 3]

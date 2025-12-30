@@ -75,6 +75,9 @@ class ReplenishmentStep(VoStep):
         if candidates is None:
             return state.C, state.F, state.T_first, None
 
+        length = len(candidates)
+        print(length)
+
         candidates = candidates.reshape(-1, 2)
 
         keypoints = np.empty((0, 2))
