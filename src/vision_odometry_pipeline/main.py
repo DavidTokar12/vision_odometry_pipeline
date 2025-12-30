@@ -14,7 +14,8 @@ def main():
     last_frame = 600
 
     # Enable/Disable Ground Truth Plotting
-    plot_ground_truth = True
+    plot_ground_truth = False
+
     # Initialize DataLoader
     sequence = ImageSequence(
         dataset_id=dataset_selection, first_frame=first_frame, last_frame=last_frame

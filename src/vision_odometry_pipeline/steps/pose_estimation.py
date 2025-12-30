@@ -18,7 +18,7 @@ class PoseEstimationStep(VoStep):
 
     def process(
         self, state: VoState, debug: bool
-    ) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray | None]:
+    ) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray | None]:
         """
         Estimates Pose and FILTERS outliers from P and X.
 
@@ -30,7 +30,7 @@ class PoseEstimationStep(VoStep):
             if debug:
                 vis_fail = cv2.cvtColor(state.image_buffer.curr, cv2.COLOR_GRAY2BGR)
                 return state.pose, state.P, state.X, vis_fail
-            return state.pose, state.P, state.X, None
+            return state.pose, state.P, state.X, state.landmark_ids, None
 
         # P3P RANSAC
         success, rvec, tvec, inliers = cv2.solvePnPRansac(
@@ -71,12 +71,15 @@ class PoseEstimationStep(VoStep):
                 mask = inliers.flatten()
                 final_P = state.P[mask]  # Keep only inlier 2D points
                 final_X = state.X[mask]  # Keep only inlier 3D points
+                final_ids = state.landmark_ids[mask]
             else:
                 final_P = state.P
                 final_X = state.X
+                final_ids = state.landmark_ids
         else:
             final_P = state.P
             final_X = state.X
+            final_ids = state.landmark_ids
 
         # Visualization
         vis = None
@@ -88,7 +91,7 @@ class PoseEstimationStep(VoStep):
             else:
                 vis = cv2.cvtColor(state.image_buffer.curr, cv2.COLOR_GRAY2BGR)
 
-        return new_pose, final_P, final_X, vis
+        return new_pose, final_P, final_X, final_ids, vis
 
     from scipy.optimize import least_squares
 

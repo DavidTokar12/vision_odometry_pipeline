@@ -62,6 +62,10 @@ class VoState:
     T_first: np.ndarray = field(
         default_factory=lambda: np.empty((0, 12), dtype=np.float64)
     )
+    # ID^i: Unique ID for every tracked point [N,]
+    landmark_ids: np.ndarray = field(
+        default_factory=lambda: np.empty((0,), dtype=np.int64)
+    )
 
     # T_WC: Current Camera Pose [4, 4]
     pose: np.ndarray = field(default_factory=lambda: np.eye(4, dtype=np.float64))

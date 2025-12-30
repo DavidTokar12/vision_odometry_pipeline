@@ -10,6 +10,9 @@ import cv2
 import numpy as np
 
 from vision_odometry_pipeline.steps.key_point_tracker import KeypointTrackingStep
+from vision_odometry_pipeline.steps.local_bundle_adjustment import (
+    LocalBundleAdjustmentStep,
+)
 from vision_odometry_pipeline.steps.pipeline_initialization import (
     PipelineInitialization,
 )
@@ -67,6 +70,7 @@ class VoRunner:
             self.pose_est = PoseEstimationStep(K=new_K)
             self.triangulation = TriangulationStep(K=new_K)
             self.replenishment = ReplenishmentStep()
+            self.local_ba = LocalBundleAdjustmentStep(K=new_K, window_size=10)
 
             # --- Preprocess Image ---
             self._state.image_buffer.update(image)
@@ -89,7 +93,7 @@ class VoRunner:
             self._state.image_buffer._buffer[-1] = gray_img
 
             # --- Find initial pose and landmarks, update state ---
-            new_C, new_F, new_T, new_X, new_P, new_pose, status = (
+            new_C, new_F, new_T, new_X, new_ids, new_P, new_pose, status = (
                 self.pipeline_initialization.process(self._state, self._debug)
             )
 
@@ -98,6 +102,7 @@ class VoRunner:
                     self._state,
                     P=new_P,
                     X=new_X,
+                    landmark_ids=new_ids,
                     C=new_C,
                     F=new_F,
                     T_first=new_T,
@@ -145,13 +150,19 @@ class VoRunner:
             # ---------------------------------------------------------
             t0 = time.perf_counter()
             # Returns: (Filtered P, Filtered X, Filtered C, Filtered F, Filtered T, Vis)
-            new_P, new_X, new_C, new_F, new_T, vis_track = self.tracker.process(
-                self._state, self._debug
+            new_P, new_X, new_ids, new_C, new_F, new_T, vis_track = (
+                self.tracker.process(self._state, self._debug)
             )
             self._record_timing("02_Tracking", t0)
 
             self._state = replace(
-                self._state, P=new_P, X=new_X, C=new_C, F=new_F, T_first=new_T
+                self._state,
+                P=new_P,
+                X=new_X,
+                landmark_ids=new_ids,
+                C=new_C,
+                F=new_F,
+                T_first=new_T,
             )
             self._save_debug(current_debug_dir, "02_Tracking", vis_track)
 
@@ -160,12 +171,14 @@ class VoRunner:
             # ---------------------------------------------------------
             t0 = time.perf_counter()
             # Returns: (New Pose, Inlier P, Inlier X, Vis)
-            new_pose, final_P, final_X, vis_pose = self.pose_est.process(
+            new_pose, final_P, final_X, final_ids, vis_pose = self.pose_est.process(
                 self._state, self._debug
             )
             self._record_timing("03_PoseEstimation", t0)
 
-            self._state = replace(self._state, pose=new_pose, P=final_P, X=final_X)
+            self._state = replace(
+                self._state, pose=new_pose, P=final_P, X=final_X, landmark_ids=final_ids
+            )
             self._save_debug(current_debug_dir, "03_PoseEstimation", vis_pose)
 
             # ---------------------------------------------------------
@@ -173,15 +186,40 @@ class VoRunner:
             # ---------------------------------------------------------
             t0 = time.perf_counter()
             # Returns: (Full P, Full X, Remaining C, Remaining F, Remaining T, Vis)
-            full_P, full_X, rem_C, rem_F, rem_T, vis_map = self.triangulation.process(
-                self._state, self._debug
+            full_P, full_X, full_ids, rem_C, rem_F, rem_T, vis_map = (
+                self.triangulation.process(self._state, self._debug)
             )
             self._record_timing("04_Triangulation", t0)
 
             self._state = replace(
-                self._state, P=full_P, X=full_X, C=rem_C, F=rem_F, T_first=rem_T
+                self._state,
+                P=full_P,
+                X=full_X,
+                landmark_ids=full_ids,
+                C=rem_C,
+                F=rem_F,
+                T_first=rem_T,
             )
             self._save_debug(current_debug_dir, "04_Triangulation", vis_map)
+
+            # ---------------------------------------------------------
+            # STEP 4.5: Local Bundle Adjustment (NEW)
+            # ---------------------------------------------------------
+            t0 = time.perf_counter()
+
+            # Run Optimization
+            opt_pose, opt_P, opt_X, vis_ba = self.local_ba.process(
+                self._state, self._debug
+            )
+            self._record_timing("05_LocalBA", t0)
+
+            self._state = replace(
+                self._state,
+                pose=opt_pose,  # Update with optimized pose
+                P=opt_P,
+                X=opt_X,  # Update with optimized structure
+            )
+            # (Optional) self._save_debug(current_debug_dir, "05_LocalBA", vis_ba)
 
             # ---------------------------------------------------------
             # STEP 5: Replenishment (New Candidates)

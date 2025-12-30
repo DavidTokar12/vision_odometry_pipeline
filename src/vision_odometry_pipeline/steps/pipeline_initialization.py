@@ -36,7 +36,7 @@ class PipelineInitialization(VoStep):
         new_T = state.T_first[st]
 
         if len(new_C) < self.config.min_inliers:
-            return new_C, new_F, new_T, None, None, None, False
+            return new_C, new_F, new_T, None, None, None, None, False
 
         # For DEBUG / CHEAT mode
         # TODO: Don't forget to remove again
@@ -75,7 +75,7 @@ class PipelineInitialization(VoStep):
                 print(
                     f"[Init] Poor distribution. Occupied cells: {occupied_cells} < {self.config.min_grid_occupancy}"
                 )
-            return new_C, new_F, new_T, None, None, None, False
+            return new_C, new_F, new_T, None, None, None, None, False
         # ---------------------------------------------------
 
         # --- CHANGED: Baseline Check (Parallax Angle) ---
@@ -107,7 +107,7 @@ class PipelineInitialization(VoStep):
         if median_angle < self.config.min_parallax_angle:
             if debug:
                 print(f"[Init] Low parallax. Median: {median_angle:.2f} deg")
-            return new_C, new_F, new_T, None, None, None, False
+            return new_C, new_F, new_T, None, None, None, None, False
 
         # Create selection mask: Filter points with very low individual parallax
         # (Using half the global threshold to keep points that are contributing)
@@ -134,7 +134,7 @@ class PipelineInitialization(VoStep):
         )
 
         if E is None:
-            return new_C, new_F, new_T, None, None, None, False
+            return new_C, new_F, new_T, None, None, None, None, False
 
         # Filter by Essential Matrix Inliers
         mask_ess = mask_ess.ravel() == 1
@@ -142,7 +142,7 @@ class PipelineInitialization(VoStep):
         cand_F = cand_F[mask_ess]
 
         if len(cand_C) < self.config.min_inliers:
-            return new_C, new_F, new_T, None, None, None, False
+            return new_C, new_F, new_T, None, None, None, None, False
 
         # Recover Pose (R, t)
         _, R, t, mask_pose = cv2.recoverPose(E, cand_F, cand_C, self.optimal_K)
@@ -156,7 +156,7 @@ class PipelineInitialization(VoStep):
         cand_F = cand_F[pose_inliers]
 
         if len(cand_C) < self.config.min_inliers:
-            return new_C, new_F, new_T, None, None, None, False
+            return new_C, new_F, new_T, None, None, None, None, False
 
         # Triangulation
         M0 = self.optimal_K @ np.hstack((np.eye(3), np.zeros((3, 1))))
@@ -185,6 +185,8 @@ class PipelineInitialization(VoStep):
             new_X = (pts_hom[:, valid_tri_mask] / W[valid_tri_mask]).T
             new_P = cand_C[valid_tri_mask]
 
+            new_ids = np.arange(len(new_X), dtype=np.int64)
+
             new_pose = np.eye(4)
             new_pose[:3, :3] = R
             new_pose[:3, 3] = t.flatten()
@@ -204,9 +206,9 @@ class PipelineInitialization(VoStep):
             rem_F = new_F[keep_mask]
             rem_T = new_T[keep_mask]
 
-            return rem_C, rem_F, rem_T, new_X, new_P, new_pose, True
+            return rem_C, rem_F, rem_T, new_X, new_ids, new_P, new_pose, True
 
-        return new_C, new_F, new_T, None, None, None, False
+        return new_C, new_F, new_T, None, None, None, None, False
 
     # For DEBUG / CHEAT mode
     # TODO: Don't forget to remove again
@@ -258,6 +260,8 @@ class PipelineInitialization(VoStep):
             new_X = (pts_hom[:, mask_valid] / W[mask_valid]).T
             new_P = cand_C[mask_valid]
 
+            new_ids = np.arange(len(new_X), dtype=np.int64)
+
             # Return the GT Pose (T_WC) as the initial pose state
             new_pose = np.eye(4)
             new_pose[:3, :] = T_wc_1[:3, :]  # Use T_WC
@@ -268,10 +272,10 @@ class PipelineInitialization(VoStep):
             rem_F = cand_F[~mask_valid]
             rem_T = cand_T[~mask_valid]
 
-            return rem_C, rem_F, rem_T, new_X, new_P, new_pose, True
+            return rem_C, rem_F, rem_T, new_X, new_ids, new_P, new_pose, True
 
         print(f"[Init-GT] Waiting for baseline... ({num_valid} valid points)")
-        return cand_C, cand_F, cand_T, None, None, None, False
+        return cand_C, cand_F, cand_T, None, None, None, None, False
 
     # For DEBUG / CHEAT mode
     # TODO: Don't forget to remove again

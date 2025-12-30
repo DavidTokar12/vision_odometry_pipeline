@@ -23,7 +23,13 @@ class KeypointTrackingStep(VoStep):
     def process(
         self, state: VoState, debug: bool
     ) -> tuple[
-        np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray | None
+        np.ndarray,
+        np.ndarray,
+        np.ndarray,
+        np.ndarray,
+        np.ndarray,
+        np.ndarray,
+        np.ndarray | None,
     ]:
         """
         Tracks points using KLT and FILTERS the state arrays based on tracking status.
@@ -67,6 +73,7 @@ class KeypointTrackingStep(VoStep):
         valid_p = st_p == 1
         new_P = p1[valid_p]
         new_X = state.X[valid_p]
+        new_ids = state.landmark_ids[valid_p]
 
         # Filter C and align F, T
         valid_c = st_c == 1
@@ -79,7 +86,7 @@ class KeypointTrackingStep(VoStep):
         if debug:
             vis = self._visualize_tracking(img_curr, p0, p1, st_p, c0, c1, st_c)
 
-        return new_P, new_X, new_C, new_F, new_T, vis
+        return new_P, new_X, new_ids, new_C, new_F, new_T, vis
 
     def _visualize_tracking(
         self,

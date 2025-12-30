@@ -18,13 +18,27 @@ class TriangulationStep(VoStep):
     def process(
         self, state: VoState, debug: bool
     ) -> tuple[
-        np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray | None
+        np.ndarray,
+        np.ndarray,
+        np.ndarray,
+        np.ndarray,
+        np.ndarray,
+        np.ndarray,
+        np.ndarray | None,
     ]:
         """
         Triangulates candidates and UPDATES the full arrays (Stacking/Removal).
         """
         if len(state.C) == 0:
-            return state.P, state.X, state.C, state.F, state.T_first, None
+            return (
+                state.P,
+                state.X,
+                state.landmark_ids,
+                state.C,
+                state.F,
+                state.T_first,
+                None,
+            )
 
         # Pre-calculation
         T_first_all = state.T_first.reshape(-1, 3, 4)
@@ -105,9 +119,19 @@ class TriangulationStep(VoStep):
         if len(new_X_list) > 0:
             full_P = np.vstack([state.P, np.array(new_P_list)])
             full_X = np.vstack([state.X, np.array(new_X_list)])
+
+            # Find the max ID currently in use to ensure uniqueness
+            start_id = 0
+            if len(state.landmark_ids) > 0:
+                start_id = state.landmark_ids.max() + 1
+
+            num_new = len(new_X_list)
+            new_ids = np.arange(start_id, start_id + num_new, dtype=np.int64)
+            full_ids = np.concatenate([state.landmark_ids, new_ids])
         else:
             full_P = state.P
             full_X = state.X
+            full_ids = state.landmark_ids
 
         # Update C, F, T (Keep remaining)
         rem_C = state.C[keep_mask]
@@ -123,7 +147,7 @@ class TriangulationStep(VoStep):
             for pt in new_P_list:  # Triangulated
                 cv2.circle(vis, (int(pt[0]), int(pt[1])), 4, (0, 255, 0), 2)
 
-        return full_P, full_X, rem_C, rem_F, rem_T, vis
+        return full_P, full_X, full_ids, rem_C, rem_F, rem_T, vis
 
     def _visualize_candidates(self, img, candidates, ready_mask):
         vis = cv2.cvtColor(img, cv2.COLOR_GRAY2BGR)
