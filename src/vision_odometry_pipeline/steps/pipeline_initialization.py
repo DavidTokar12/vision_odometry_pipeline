@@ -65,7 +65,7 @@ class PipelineInitialization(VoStep):
 
         # Count occupancy
         # (This loop is fast for ~200 points)
-        for r, c in zip(idx_y, idx_x):
+        for r, c in zip(idx_y, idx_x, strict=True):
             grid_counts[r, c] += 1
 
         occupied_cells = np.sum(grid_counts > 0)
@@ -346,10 +346,6 @@ class PipelineInitialization(VoStep):
             self.initial_K, self.initial_D, (w, h), alpha=0, newImgSize=(w, h)
         )
 
-        # Update focal lengths and principal point with optimal values
-        self.fx, self.fy = self.optimal_K[0, 0], self.optimal_K[1, 1]
-        self.cx, self.cy = self.optimal_K[0, 2], self.optimal_K[1, 2]
-
         map_x, map_y = cv2.initUndistortRectifyMap(
             self.initial_K,
             self.initial_D,
@@ -358,6 +354,16 @@ class PipelineInitialization(VoStep):
             (w, h),
             cv2.CV_16SC2,
         )
+
+        # Adjust Principal Point for the ROI crop
+        x, y, _, _ = roi
+        self.optimal_K[0, 2] -= x  # cx' = cx - x
+        self.optimal_K[1, 2] -= y  # cy' = cy - y
+
+        # Update focal lengths and principal point with optimal values
+        self.fx, self.fy = self.optimal_K[0, 0], self.optimal_K[1, 1]
+        self.cx, self.cy = self.optimal_K[0, 2], self.optimal_K[1, 2]
+
         return map_x, map_y, roi, self.optimal_K
 
     def _track_features_bidirectional(self, img0, img1, p0):
@@ -367,9 +373,9 @@ class PipelineInitialization(VoStep):
             "criteria": self.config.lk_criteria,
         }
         # Forward flow
-        p1, st1, err1 = cv2.calcOpticalFlowPyrLK(img0, img1, p0, None, **lk_params)
+        p1, st1, _ = cv2.calcOpticalFlowPyrLK(img0, img1, p0, None, **lk_params)
         # Backward flow
-        p0r, st2, err2 = cv2.calcOpticalFlowPyrLK(img1, img0, p1, None, **lk_params)
+        p0r, st2, _ = cv2.calcOpticalFlowPyrLK(img1, img0, p1, None, **lk_params)
 
         # Check consistency (L-infinity norm)
         dist = abs(p0 - p0r).reshape(-1, 2).max(-1)
