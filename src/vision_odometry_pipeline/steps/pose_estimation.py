@@ -37,7 +37,7 @@ class PoseEstimationStep(VoStep):
             state.X,  # Triangulated 3D Landmarks
             state.P,  # Tracked 2D Keypoints
             self.K,
-            None,  # No distorsion
+            None,  # No distortion
             iterationsCount=self.config.iterations_count,
             reprojectionError=self.config.repr_error,
             confidence=self.config.ransac_prob,
