@@ -28,8 +28,8 @@ class InitializationConfig:
     # --- Change Bootstrap Option ---
     # Set the correct path matching the option in main.py
     CHEATMODE = False
-    # DEBUG_GT_POSES_PATH = "data/parking/poses.txt"
-    DEBUG_GT_POSES_PATH = "data/kitti/poses/05.txt"
+    DEBUG_GT_POSES_PATH = "data/parking/poses.txt"
+    # DEBUG_GT_POSES_PATH = "data/kitti/poses/05.txt"
 
     # --- Tracking during Init ---
     lk_win_size: tuple[int, int] = (21, 21)
@@ -110,6 +110,8 @@ class ReplenishmentConfig:
 
     cell_cap_multiplier = 2
     global_feature_multiplier = 8
+
+    min_feature_factor = 0.6
 
 
 @dataclass

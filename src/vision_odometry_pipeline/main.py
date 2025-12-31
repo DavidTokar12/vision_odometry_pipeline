@@ -11,7 +11,7 @@ def main():
     # 0: Parking, 1: KITTI, 2: Malaga
     dataset_selection = 0
     first_frame = 0
-    last_frame = 200
+    last_frame = None
 
     # Enable/Disable Ground Truth Plotting
     plot_ground_truth = False
