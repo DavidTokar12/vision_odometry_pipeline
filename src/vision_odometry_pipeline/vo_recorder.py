@@ -81,7 +81,7 @@ class VoRecorder:
         # Track the first frame for ground truth alignment
         if self.first_frame is None:
             self.first_frame = state.frame_id
-        
+
         self.frame_count += 1
         num_landmarks = len(state.P)
         self.landmark_history.append(num_landmarks)
@@ -175,7 +175,7 @@ class VoRecorder:
                 current_frame = state.frame_id
                 start_frame = max(self.first_frame, current_frame - lookback + 1)
                 end_frame = current_frame + 1
-                
+
                 if end_frame <= len(self.ground_truth):
                     gt_local = self.ground_truth[start_frame:end_frame]
                     self.ax_local.plot(
@@ -187,11 +187,16 @@ class VoRecorder:
                     )
 
             # Dynamic view scaling based on movement
-            radius_x = max(abs(tx[0] - tx[-1]) * 1.5, 5)
-            radius_y = max(abs(tz[0] - tz[-1]) * 1.5, 5)
+            # Calculate actual spread (min to max) to handle loops/stationarity
+            spread_x = np.ptp(tx)
+            spread_z = np.ptp(tz)
 
-            self.ax_local.set_xlim(tx[-1] - radius_x, tx[-1] + radius_x)
-            self.ax_local.set_ylim(tz[-1] - radius_y, tz[-1] + radius_y)
+            # Use max spread to ensure square aspect ratio manually.
+            # Epsilon (0.01) prevents singular axes (which trigger Matplotlib's default large zoom).
+            radius = max(spread_x, spread_z, 0.01)
+
+            self.ax_local.set_xlim(tx[-1] - radius, tx[-1] + radius)
+            self.ax_local.set_ylim(tz[-1] - radius, tz[-1] + radius)
 
         # ---------------------------------------------------------
         # 3. Plot Landmark Count History (Bottom Left)
@@ -225,7 +230,7 @@ class VoRecorder:
                 # Show ground truth from first_frame to current_frame using actual frame IDs
                 start_frame = self.first_frame
                 end_frame = state.frame_id + 1
-                
+
                 if end_frame <= len(self.ground_truth):
                     gt_full = self.ground_truth[start_frame:end_frame]
                     self.ax_full.plot(
@@ -298,9 +303,7 @@ class VoRecorder:
 
         try:
             # Run the command and capture output for error handling
-            subprocess.run(
-                command, check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE
-            )
+            subprocess.run(command, check=True, capture_output=True)
             print(f"Successfully compressed: {video_path_compressed}")
         except subprocess.CalledProcessError as e:
             print(f"Error during compression: {e.stderr.decode()}")
