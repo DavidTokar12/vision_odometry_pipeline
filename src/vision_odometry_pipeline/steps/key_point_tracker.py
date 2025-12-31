@@ -67,19 +67,65 @@ class KeypointTrackingStep(VoStep):
             c1, st_c = self._track_features_bidirectional(img_prev, img_curr, c0)
             st_c = st_c.reshape(-1)
 
+        # # Filter Data
+        # # --------------------------------
+        # # Filter P and align X
+        # valid_p = st_p == 1
+        # new_P = p1[valid_p]
+        # new_X = state.X[valid_p]
+        # new_ids = state.landmark_ids[valid_p]
+
+        # # Filter C and align F, T
+        # valid_c = st_c == 1
+        # new_C = c1[valid_c]
+        # new_F = state.F[valid_c]
+        # new_T = state.T_first[valid_c]
+
         # Filter Data
         # --------------------------------
+
+        # 1. Gather all successfully tracked points for 8-Point RANSAC
+        # Convert boolean masks to indices to easily map RANSAC results back
+        idx_p_good = np.where(st_p == 1)[0]
+        idx_c_good = np.where(st_c == 1)[0]
+
+        # Prepare data for RANSAC (Prev -> Curr)
+        pts_prev_all = np.vstack((p0[idx_p_good], c0[idx_c_good]))
+        pts_curr_all = np.vstack((p1[idx_p_good], c1[idx_c_good]))
+
+        # 2. Run 8-Point RANSAC
+        if len(pts_prev_all) >= 8:
+            _, ransac_mask = cv2.findFundamentalMat(
+                pts_prev_all,
+                pts_curr_all,
+                cv2.FM_RANSAC,
+                self.config.ransac_threshold,
+                0.99,  # confidence
+                self.config.ransac_iters,
+            )
+            ransac_mask = ransac_mask.flatten() == 1
+        else:
+            ransac_mask = np.ones(len(pts_prev_all), dtype=bool)
+
+        # 3. Split mask back to P and C components
+        split_idx = len(idx_p_good)
+        mask_p_ransac = ransac_mask[:split_idx]
+        mask_c_ransac = ransac_mask[split_idx:]
+
+        # 4. Apply combined filter (KLT Status AND RANSAC Inlier)
+        # Update the original 'good' indices to keep only RANSAC inliers
+        final_idx_p = idx_p_good[mask_p_ransac]
+        final_idx_c = idx_c_good[mask_c_ransac]
+
         # Filter P and align X
-        valid_p = st_p == 1
-        new_P = p1[valid_p]
-        new_X = state.X[valid_p]
-        new_ids = state.landmark_ids[valid_p]
+        new_P = p1[final_idx_p]
+        new_X = state.X[final_idx_p]
+        new_ids = state.landmark_ids[final_idx_p]
 
         # Filter C and align F, T
-        valid_c = st_c == 1
-        new_C = c1[valid_c]
-        new_F = state.F[valid_c]
-        new_T = state.T_first[valid_c]
+        new_C = c1[final_idx_c]
+        new_F = state.F[final_idx_c]
+        new_T = state.T_first[final_idx_c]
 
         # 4. Visualization
         vis = None

@@ -9,9 +9,9 @@ from vision_odometry_pipeline.vo_runner import VoRunner
 
 def main():
     # 0: Parking, 1: KITTI, 2: Malaga
-    dataset_selection = 1
+    dataset_selection = 0
     first_frame = 0
-    last_frame = 1000
+    last_frame = 200
 
     # Enable/Disable Ground Truth Plotting
     plot_ground_truth = False

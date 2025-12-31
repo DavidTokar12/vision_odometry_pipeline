@@ -16,6 +16,10 @@ class KeypointTrackingConfig:
         2.0  # Threshold for forward-backward consistency check (pixels)
     )
 
+    # --- 8-Point RANSAC ---
+    ransac_threshold: float = 1.0  # Distance threshold from epipolar line
+    ransac_iters: int = 1500  # Number of RANSAC iterations
+
 
 @dataclass
 class InitializationConfig:
@@ -24,8 +28,8 @@ class InitializationConfig:
     # --- Change Bootstrap Option ---
     # Set the correct path matching the option in main.py
     CHEATMODE = False
-    DEBUG_GT_POSES_PATH = "data/parking/poses.txt"
-    # DEBUG_GT_POSES_PATH = "data/kitti/poses/05.txt"
+    # DEBUG_GT_POSES_PATH = "data/parking/poses.txt"
+    DEBUG_GT_POSES_PATH = "data/kitti/poses/05.txt"
 
     # --- Tracking during Init ---
     lk_win_size: tuple[int, int] = (21, 21)
@@ -68,8 +72,8 @@ class PoseEstimationConfig:
 
     # --- P3P RANSAC ---
     ransac_prob: float = 0.999
-    repr_error: float = 2.0  # Max reprojection error for PnP inliers (pixels)
-    iterations_count: int = 100  # Max RANSAC iterations
+    repr_error: float = 10.0  # Max reprojection error for PnP inliers (pixels)
+    iterations_count: int = 500  # Max RANSAC iterations
     pnp_flags: int = cv2.SOLVEPNP_P3P  # PnP Method (P3P is fast for minimal sets)
 
     # --- Least Square ----
@@ -77,7 +81,7 @@ class PoseEstimationConfig:
     # Options: 'linear' (default/brittle), 'huber', 'soft_l1', 'cauchy', 'arctan'
     refinement_loss: str = "huber"
     # Outlier threshold in pixels. Ignored if loss is 'linear'.
-    refinement_f_scale: float = 1.0
+    refinement_f_scale: float = 0.6
 
 
 @dataclass
@@ -87,7 +91,7 @@ class ReplenishmentConfig:
     """
 
     # --- Feature Detection (Shi-Tomasi/Harris) ---
-    max_features: int = 1500  # Target total number of active features in the system
+    max_features: int = 4000  # Target total number of active features in the system
     min_dist: int = 7  # Minimum pixel distance between features
     quality_level: float = 0.01  # Corner quality level (0.0 to 1.0)
     block_size: int = 3  # Block size for corner computation
@@ -104,7 +108,7 @@ class ReplenishmentConfig:
     grid_rows: int = 7
     grid_cols: int = 7
 
-    cell_cap_multiplier = 1.2
+    cell_cap_multiplier = 2
     global_feature_multiplier = 8
 
 
@@ -118,9 +122,9 @@ class TriangulationConfig:
     )
 
     # --- Geometric Filtering ---
-    min_angle_deg: float = 1.7  # Minimum triangulation angle (degrees)
+    min_angle_deg: float = 0.7  # Minimum triangulation angle (degrees)
     max_depth: float = (
-        150.0  # Maximum allowed depth (meters) to prevent unstable points
+        100.0  # Maximum allowed depth (meters) to prevent unstable points
     )
     min_depth: float = 0.0  # Points must be in front of camera
 
@@ -128,6 +132,8 @@ class TriangulationConfig:
 @dataclass
 class LocalBundleAdjustmentConfig:
     """Configuration for Local Bundle Adjustment."""
+
+    enable_ba = True
 
     window_size: int = 5  # Number of frames in sliding window
 

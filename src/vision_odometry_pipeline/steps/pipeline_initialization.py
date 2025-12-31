@@ -219,14 +219,23 @@ class PipelineInitialization(VoStep):
 
         # 1. Get Poses for Frame 0 (Start) and Current Frame
         # Assuming init started at frame 0. If your buffer started later, adjust index.
-        try:
-            T_wc_0 = self._cached_gt_poses[0]
-            T_wc_1 = self._cached_gt_poses[state.frame_id]
-        except IndexError:
-            print(f"[Init-GT] Error: GT Poses not found for frame {state.frame_id}")
-            return cand_C, cand_F, cand_T, None, None, None, False
 
-        print(f"[Init-GT] Cheating with GT Poses for Frame 0 -> {state.frame_id}")
+        # FIX: Use state.frame_id - 1 instead of hardcoded 0 to support starting later in the sequence
+        prev_idx = 0
+        curr_idx = 1
+
+        assert state.frame_id == 1
+
+        try:
+            T_wc_0 = self._cached_gt_poses[prev_idx]
+            T_wc_1 = self._cached_gt_poses[curr_idx]
+        except IndexError:
+            print(
+                f"[Init-GT] Error: GT Poses not found for frames {prev_idx}-{curr_idx}"
+            )
+            return cand_C, cand_F, cand_T, None, None, None, None, False
+
+        print(f"[Init-GT] Cheating with GT Poses for Frame {prev_idx} -> {curr_idx}")
 
         # 2. Invert to T_CW (World-to-Camera) for Projection Matrices
         T_cw_0 = self._inv_pose(T_wc_0)
@@ -270,7 +279,15 @@ class PipelineInitialization(VoStep):
             # (Or return them in rem_C if you want to keep tracking them)
             rem_C = cand_C[~mask_valid]
             rem_F = cand_F[~mask_valid]
-            rem_T = cand_T[~mask_valid]
+
+            # FIX: The remaining candidates were initialized with T_first=Identity.
+            # But we are now locked into the Absolute GT Frame.
+            # We must update their T_first to match the actual start pose T_wc_0.
+            rem_T = cand_T[~mask_valid].copy()
+            # Flatten T_wc_0 to shape (12,)
+            gt_start_pose_flat = T_wc_0[:3, :].flatten()
+            # Update all remaining candidates to originate from this valid metric pose
+            rem_T[:] = gt_start_pose_flat
 
             return rem_C, rem_F, rem_T, new_X, new_ids, new_P, new_pose, True
 
@@ -346,6 +363,27 @@ class PipelineInitialization(VoStep):
         Generate lookup maps to remove image distortion.
         """
         h, w = image_size
+
+        if self.initial_D is None or np.all(np.abs(self.initial_D) < 1e-5):
+            print("[Init] Rectified image detected (D~0). Forcing Original K.")
+
+            # 1. Force Optimal K to be identical to Original K
+            self.optimal_K = self.initial_K.copy()
+
+            # 2. Update internal params
+            self.fx, self.fy = self.optimal_K[0, 0], self.optimal_K[1, 1]
+            self.cx, self.cy = self.optimal_K[0, 2], self.optimal_K[1, 2]
+
+            # 3. Create Identity Maps (No remapping/interpolation)
+            map_x, map_y = np.meshgrid(np.arange(w), np.arange(h))
+            map_x = map_x.astype(np.float32)
+            map_y = map_y.astype(np.float32)
+
+            # ROI is the full image
+            roi = (0, 0, w, h)
+
+            return map_x, map_y, roi, self.optimal_K
+
         self.optimal_K, roi = cv2.getOptimalNewCameraMatrix(
             self.initial_K, self.initial_D, (w, h), alpha=0, newImgSize=(w, h)
         )

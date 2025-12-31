@@ -25,6 +25,10 @@ class ReplenishmentStep(VoStep):
         curr_img = state.image_buffer.curr
         h, w = curr_img.shape
 
+        total_active = len(state.P) + len(state.C)
+        if total_active > self.config.max_features * 0.6:
+            return state.C, state.F, state.T_first, None
+
         # Grid Configuration
         n_rows = self.config.grid_rows
         n_cols = self.config.grid_cols

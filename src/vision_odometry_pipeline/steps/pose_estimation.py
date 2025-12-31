@@ -29,7 +29,7 @@ class PoseEstimationStep(VoStep):
         if len(state.P) < 4:
             if debug:
                 vis_fail = cv2.cvtColor(state.image_buffer.curr, cv2.COLOR_GRAY2BGR)
-                return state.pose, state.P, state.X, vis_fail
+                return state.pose, state.P, state.X, state.landmark_ids, vis_fail
             return state.pose, state.P, state.X, state.landmark_ids, None
 
         # P3P RANSAC
@@ -52,6 +52,20 @@ class PoseEstimationStep(VoStep):
             inlier_mask = inliers.flatten()
             P_in = state.P[inlier_mask]
             X_in = state.X[inlier_mask]
+
+            # Iterative PnP uses Levenberg-Marquardt internally and is very robust
+            # when initialized with the RANSAC result.
+            if len(P_in) >= 4:
+                _, rvec, tvec = cv2.solvePnP(
+                    X_in,
+                    P_in,
+                    self.K,
+                    None,
+                    rvec=rvec,
+                    tvec=tvec,
+                    useExtrinsicGuess=True,
+                    flags=cv2.SOLVEPNP_ITERATIVE,
+                )
 
             # Non-Linear Refinement (Motion-Only BA)
             rvec, tvec = self.refine_pose_motion_only(rvec, tvec, X_in, P_in)

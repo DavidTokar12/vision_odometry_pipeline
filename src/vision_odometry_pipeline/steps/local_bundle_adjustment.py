@@ -128,6 +128,9 @@ class LocalBundleAdjustmentStep(VoStep):
         Returns:
             (Optimized_Pose, P, Optimized_X, Vis)
         """
+        if not self.config.enable_ba:
+            return state.pose, state.P, state.X, None
+
         # 1. Manage Sliding Window
         self._update_window(state)
 
