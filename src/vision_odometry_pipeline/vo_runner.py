@@ -168,7 +168,6 @@ class VoRunner:
                 self._state, self._debug
             )
             self._record_timing("03_PoseEstimation", t0)
-
             self._state.pose = new_pose
             self._state.P = final_P
             self._state.X = final_X
@@ -201,7 +200,7 @@ class VoRunner:
             # Run Optimization
             opt_pose, opt_P, opt_X, _ = self.local_ba.process(self._state, self._debug)
             self._record_timing("05_LocalBA", t0)
-
+            
             self._state.pose = opt_pose  # Update with optimized pose
             self._state.P = opt_P
             self._state.X = opt_X  # Update with optimized structure
@@ -228,6 +227,18 @@ class VoRunner:
 
         self._trajectory.append(self._state.pose.copy())
         self._frame_idx += 1
+
+        assert isinstance(self._state.P, np.ndarray) and self._state.P.dtype == np.float32 and self._state.P.ndim == 2 and self._state.P.shape[1] == 2
+        assert isinstance(self._state.X, np.ndarray) and self._state.X.dtype == np.float32 and self._state.X.ndim == 2 and self._state.X.shape[1] == 3
+        assert isinstance(self._state.C, np.ndarray) and self._state.C.dtype == np.float32 and self._state.C.ndim == 2 and self._state.C.shape[1] == 2
+        assert isinstance(self._state.F, np.ndarray) and self._state.F.dtype == np.float32 and self._state.F.ndim == 2 and self._state.F.shape[1] == 2
+        assert isinstance(self._state.T_first, np.ndarray) and self._state.T_first.dtype == np.float32 and self._state.T_first.ndim == 2 and self._state.T_first.shape[1] == 12
+        assert isinstance(self._state.landmark_ids, np.ndarray) and self._state.landmark_ids.dtype == np.int64 and self._state.landmark_ids.ndim == 1
+        assert isinstance(self._state.pose, np.ndarray) and self._state.pose.dtype == np.float32 and self._state.pose.shape == (4, 4)
+        if self._state.image_buffer.prev is not None and self._state.image_buffer.curr is not None:
+            assert self._state.image_buffer.prev.dtype == self._state.image_buffer.curr.dtype
+            assert self._state.image_buffer.prev.shape == self._state.image_buffer.curr.shape
+            assert self._state.image_buffer.prev.ndim == 2 
 
         return self._state
 

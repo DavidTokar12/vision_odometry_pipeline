@@ -212,7 +212,8 @@ class LocalBundleAdjustmentStep(VoStep):
             res.x, state, pose_indices, landmark_indices
         )
 
-        return new_pose, state.P, new_X, None
+        # this was float 64, will not touch the algorithm yet just change it here
+        return new_pose.astype(np.float32), state.P, new_X, None
 
     def _unpack_results(
         self,

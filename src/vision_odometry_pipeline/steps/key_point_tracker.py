@@ -44,18 +44,18 @@ class KeypointTrackingStep(VoStep):
             raise ValueError("Tracking requires two images in buffer")
 
         # Track Active Keypoints (P)
-        p0 = state.P.astype(np.float32)
+        p0 = state.P
         p1 = np.empty((0, 2), dtype=np.float32)
-        st_p = np.empty((0,), dtype=np.uint8)
+        st_p = np.empty((0,), dtype=bool)
 
         if len(p0) > 0:
             p1, st_p = self._track_features_bidirectional(img_prev, img_curr, p0)
             st_p = st_p.reshape(-1)
 
         # Track Candidate Keypoints (C)
-        c0 = state.C.astype(np.float32)
+        c0 = state.C
         c1 = np.empty((0, 2), dtype=np.float32)
-        st_c = np.empty((0,), dtype=np.uint8)
+        st_c = np.empty((0,), dtype=bool)
 
         if len(c0) > 0:
             c1, st_c = self._track_features_bidirectional(img_prev, img_curr, c0)
@@ -82,13 +82,13 @@ class KeypointTrackingStep(VoStep):
 
         # Gather all successfully tracked points for 8-Point RANSAC
         # Convert boolean masks to indices to easily map RANSAC results back
-        idx_p_good = np.where(st_p == 1)[0]
-        idx_c_good = np.where(st_c == 1)[0]
-
+        idx_p_good = np.flatnonzero(st_p)
+        idx_c_good = np.flatnonzero(st_c)
+        
         # Prepare data for RANSAC (Prev -> Curr)
-        pts_prev_all = np.vstack((p0[idx_p_good], c0[idx_c_good]))
-        pts_curr_all = np.vstack((p1[idx_p_good], c1[idx_c_good]))
-
+        pts_prev_all = np.concatenate((p0[idx_p_good], c0[idx_c_good]), axis=0).astype(np.float32, copy=False)
+        pts_curr_all = np.concatenate((p1[idx_p_good], c1[idx_c_good]), axis=0).astype(np.float32, copy=False)
+        
         # Run 8-Point RANSAC
         if len(pts_prev_all) >= 8:
             _, ransac_mask = cv2.findFundamentalMat(
@@ -173,17 +173,22 @@ class KeypointTrackingStep(VoStep):
         return vis
 
     def _track_features_bidirectional(self, img0, img1, p0):
-        # Forward flow
+        # Ensure float32 and OpenCV-friendly shape (N,1,2)
+        p0 = np.asarray(p0, dtype=np.float32).reshape(-1, 1, 2)
+
         p1, st1, _ = cv2.calcOpticalFlowPyrLK(img0, img1, p0, None, **self.lk_params)
-        # Backward flow
         p0r, st2, _ = cv2.calcOpticalFlowPyrLK(img1, img0, p1, None, **self.lk_params)
 
-        # Check consistency
-        dist = abs(p0 - p0r).reshape(-1, 2).max(-1)
+        # Back to (N,2) for your pipeline
+        p0_2 = p0.reshape(-1, 2)
+        p1_2 = p1.reshape(-1, 2)
+        p0r_2 = p0r.reshape(-1, 2)
+
+        dist = np.abs(p0_2 - p0r_2).max(axis=1)  # stays float32
         good_mask = (
-            (st1.flatten() == 1)
-            & (st2.flatten() == 1)
+            (st1.reshape(-1) == 1)
+            & (st2.reshape(-1) == 1)
             & (dist < self.config.bidirectional_error)
         )
 
-        return p1, good_mask
+        return p1_2.astype(np.float32, copy=False), good_mask

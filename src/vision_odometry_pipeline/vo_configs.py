@@ -130,7 +130,7 @@ class TriangulationConfig:
     )
     min_depth: float = 0.0  # Points must be in front of camera
 
-    reset_scale = True
+    reset_scale = False
 
 
 @dataclass

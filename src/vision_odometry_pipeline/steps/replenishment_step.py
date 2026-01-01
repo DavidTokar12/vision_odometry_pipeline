@@ -13,6 +13,9 @@ class ReplenishmentStep(VoStep):
         super().__init__("Replenishment")
         self.config = ReplenishmentConfig()
 
+        self._mask: np.ndarray | None = None
+        self._mask_shape: tuple[int, int] | None = None
+
     def process(
         self, state: VoState, debug: bool
     ) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray | None]:
@@ -41,27 +44,43 @@ class ReplenishmentStep(VoStep):
         cap_per_cell = int(avg_features_per_cell * self.config.cell_cap_multiplier)
 
         # Count Existing Features and map them to their grid bin ID
-        grid_counts = np.zeros(n_bins, dtype=int)
-        all_pts = np.vstack([state.P, state.C]) if len(state.C) > 0 else state.P
+        grid_counts = np.zeros(n_bins, dtype=np.int32)
 
-        if len(all_pts) > 0:
-            cx = (all_pts[:, 0] // dx).astype(int)
-            cy = (all_pts[:, 1] // dy).astype(int)
+        P = state.P
+        C = state.C
+        nP = len(P)
+        nC = len(C)
+        total_current = nP + nC
+
+        def _accumulate_bins(pts: np.ndarray):
+            if len(pts) == 0:
+                return
+            cx = (pts[:, 0] // dx).astype(np.int32)
+            cy = (pts[:, 1] // dy).astype(np.int32)
             cx = np.clip(cx, 0, n_cols - 1)
             cy = np.clip(cy, 0, n_rows - 1)
             bin_ids = cy * n_cols + cx
             np.add.at(grid_counts, bin_ids, 1)
 
-        # Masking out already existing points
-        mask = np.full(curr_img.shape, 255, dtype=np.uint8)
-        if len(all_pts) > 0:
-            for pt in all_pts:
-                cv2.circle(
-                    mask, (int(pt[0]), int(pt[1])), self.config.mask_radius, 0, -1
-                )
+        _accumulate_bins(P)
+        _accumulate_bins(C)
 
-        n_needed = self.config.max_features - len(all_pts)
-        if not n_needed > 0:
+        # Reuse mask buffer (allocate once per resolution)
+        if self._mask is None or self._mask_shape != curr_img.shape:
+            self._mask = np.empty(curr_img.shape, dtype=np.uint8)
+            self._mask_shape = curr_img.shape
+        mask = self._mask
+        mask.fill(255)
+
+        if nP > 0:
+            for pt in P:
+                cv2.circle(mask, (int(pt[0]), int(pt[1])), self.config.mask_radius, 0, -1)
+        if nC > 0:
+            for pt in C:
+                cv2.circle(mask, (int(pt[0]), int(pt[1])), self.config.mask_radius, 0, -1)
+
+        n_needed = self.config.max_features - total_current
+        if n_needed <= 0:
             return state.C, state.F, state.T_first, None
 
         # Global Detection
@@ -81,7 +100,7 @@ class ReplenishmentStep(VoStep):
 
         candidates = candidates.reshape(-1, 2)
 
-        keypoints = np.empty((0, 2))
+        keypoints = np.empty((0, 2), dtype=np.float32)
 
         # Map candidates to bins
         c_idx = (candidates[:, 0] // dx).astype(int)
@@ -113,20 +132,32 @@ class ReplenishmentStep(VoStep):
         keypoints = candidates[keep_mask]  # len: num. needed points
 
         # Truncate if we exceeded the hard global limit
-        total_current = len(all_pts)
         if total_current + len(keypoints) > self.config.max_features:
             needed = self.config.max_features - total_current
             keypoints = keypoints[:needed] if needed > 0 else np.empty((0, 2))
 
-        # Data Stacking
-        if len(keypoints) > 0:
-            full_C = np.vstack([state.C, keypoints])
-            full_F = np.vstack([state.F, keypoints])  # F is current pixel loc
+        # Data Stacking (min allocations, no tile, no flatten copy)
+        n_new = len(keypoints)
+        if n_new > 0:
+            n_old = len(state.C)
 
-            # Assuming state.pose is 4x4, we flatten the top 3x4 (R|t) to 12
-            pose_3x4 = state.pose[:3, :].flatten()
-            tiled_poses = np.tile(pose_3x4, (len(keypoints), 1))
-            full_T = np.vstack([state.T_first, tiled_poses])
+            full_C = np.empty((n_old + n_new, 2), dtype=np.float32)
+            full_F = np.empty((n_old + n_new, 2), dtype=np.float32)
+            full_T = np.empty((n_old + n_new, 12), dtype=np.float32)
+
+            if n_old > 0:
+                full_C[:n_old] = state.C
+                full_F[:n_old] = state.F
+                full_T[:n_old] = state.T_first
+
+            full_C[n_old:] = keypoints
+            full_F[n_old:] = keypoints
+
+            pose_3x4 = state.pose[:3, :].ravel()  # prefer ravel over flatten (avoids copy when possible)
+            pose_3x4 = pose_3x4.astype(np.float32, copy=False)
+
+            # Broadcast to all new rows (no np.tile allocation)
+            full_T[n_old:] = pose_3x4
         else:
             full_C = state.C
             full_F = state.F
