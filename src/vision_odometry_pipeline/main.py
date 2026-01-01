@@ -1,74 +1,148 @@
 from __future__ import annotations
 
+import argparse
+import logging
 import os
 
 from vision_odometry_pipeline.image_sequence import ImageSequence
+from vision_odometry_pipeline.image_sequence import create_config
 from vision_odometry_pipeline.vo_recorder import VoRecorder
-from vision_odometry_pipeline.vo_runner import VoRunner
+from vision_odometry_pipeline.vo_runner_process import VoRunnerProcess
+
+
+logger = logging.getLogger(__name__)
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s | %(levelname)-8s | %(name)s | %(message)s",
+    datefmt="%H:%M:%S",
+)
+
+
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(
+        description="Visual Odometry Pipeline",
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter,
+    )
+
+    parser.add_argument(
+        "-d",
+        "--dataset",
+        type=str,
+        default="parking",
+        choices=["parking", "kitti", "malaga", "0", "1", "2"],
+        help="Dataset to process",
+    )
+    parser.add_argument(
+        "-f",
+        "--first-frame",
+        type=int,
+        default=0,
+        help="First frame to process",
+    )
+    parser.add_argument(
+        "-l",
+        "--last-frame",
+        type=int,
+        default=None,
+        help="Last frame to process (None for dataset default)",
+    )
+    parser.add_argument(
+        "-o",
+        "--output",
+        type=str,
+        default="/workspaces/vision_odometry_pipeline/debug_output",
+        help="Output directory base path",
+    )
+    parser.add_argument(
+        "-dp",
+        "--data-path",
+        type=str,
+        default="/workspaces/vision_odometry_pipeline/data",
+        help="Output directory base path",
+    )
+    parser.add_argument(
+        "-g",
+        "--ground-truth",
+        action="store_true",
+        default=False,
+        help="Plot ground truth trajectory",
+    )
+    parser.add_argument(
+        "--debug",
+        action="store_true",
+        default=False,
+        help="Enable debug mode (VO runner debug output)",
+    )
+
+    return parser.parse_args()
 
 
 def main():
-    # 0: Parking, 1: KITTI, 2: Malaga
-    dataset_selection = 0
-    first_frame = 0
-    last_frame = None
+    args = parse_args()
 
-    # Enable/Disable Ground Truth Plotting
-    plot_ground_truth = False
-
-    # Initialize DataLoader
-    sequence = ImageSequence(
-        dataset_id=dataset_selection, first_frame=first_frame, last_frame=last_frame
+    config = create_config(
+        dataset=int(args.dataset) if args.dataset.isdigit() else args.dataset,
+        base_path=args.data_path,
+        first_frame=args.first_frame,
+        last_frame=args.last_frame,
+        output=args.output,
     )
+    sequence = ImageSequence(config)
 
-    print("Initializing VO Runner...")
-    runner = VoRunner(
+    first_image = sequence.peek_image()
+    if first_image is None:
+        raise RuntimeError("Could not load first image")
+
+    video_path = os.path.join(sequence.debug_output, "out.mp4")
+
+    logger.info("Initializing VO Runner Process...")
+
+    with VoRunnerProcess(
         K=sequence.K,
         D=sequence.D,
-        initial_frame=first_frame,
-        debug=True,
+        image_shape=first_image.shape,
+        image_dtype=first_image.dtype,
+        initial_frame=args.first_frame,
+        debug=args.debug,
         debug_output=sequence.debug_output,
-    )
+    ) as runner:
+        recorder = VoRecorder(
+            output_path=video_path, plot_ground_truth=args.ground_truth
+        )
 
-    # Initialize Recorder
-    video_path = os.path.join(sequence.debug_output, "out.mp4")
-    recorder = VoRecorder(output_path=video_path, plot_ground_truth=plot_ground_truth)
-
-    # Set ground truth if available and plotting is enabled
-    if plot_ground_truth and sequence.ground_truth is not None:
-        recorder.set_ground_truth(sequence.ground_truth)
-        print(f"Ground truth loaded: {len(sequence.ground_truth)} poses")
-
-    # Main Loop
-    while not sequence.is_finished:
-        frame_id = sequence.current_idx
-
-        image = sequence.get_image()
-        if image is None:
-            print("Stream ended or image load failure.")
-            break
+        if args.ground_truth and sequence.ground_truth is not None:
+            recorder.set_ground_truth(sequence.ground_truth)
+            logger.info("Ground truth loaded: %d poses", len(sequence.ground_truth))
 
         try:
-            state = runner.process_frame(image)
+            for frame_id, image in sequence:
+                runner.submit_frame(frame_id, image)
+                result = runner.get_result(timeout=30.0)
 
-            # If ground truth is needed for recording/plotting
-            # you can access loader.ground_truth here
-            recorder.update(state=state, full_trajectory=runner.get_trajectory())
-            print(
-                f"Processed Frame {frame_id:04d} in {runner.last_processing_time:.1f} ms",
-                end="\r",
-            )
+                if result is None:
+                    logger.error("Timeout waiting for frame %d", frame_id)
+                    break
 
+                recorder.update(
+                    image=image,
+                    result=result,
+                    full_trajectory=result.trajectory,
+                )
+                print(
+                    f"Processed Frame {result.frame_id:04d} in {result.processing_time_ms:.1f} ms",
+                    end="\r",
+                )
         except Exception as e:
-            print(f"\nCritical Failure at Frame {frame_id}: {e}")
-            break
+            logger.exception(
+                "Critical failure at frame %d: %s", sequence.current_idx, e
+            )
+            raise
 
-    print("\nProcessing Complete.")
+    print()
+    logger.info("Processing complete")
+
     recorder.close()
-    recorder.compress()
-    print(f"Video saved to {video_path}")
-
-    runner.print_diagnostics()
+    logger.info("Video saved to %s", video_path)
 
 
 if __name__ == "__main__":
