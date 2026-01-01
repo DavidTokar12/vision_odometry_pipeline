@@ -38,8 +38,7 @@ class ImageSlidingWindow:
         return len(self._buffer) == 2
 
 
-# frozen, as only VoRunner should modify the state
-@dataclass(frozen=True)
+@dataclass
 class VoState:
     """
     Pure Data Class.
@@ -50,17 +49,17 @@ class VoState:
     image_buffer: ImageSlidingWindow = field(default_factory=ImageSlidingWindow)
 
     # P^i: Tracked 2D Keypoints [N, 2]
-    P: np.ndarray = field(default_factory=lambda: np.empty((0, 2), dtype=np.float64))
+    P: np.ndarray = field(default_factory=lambda: np.empty((0, 2), dtype=np.float32))
     # X^i: Triangulated 3D Landmarks [N, 3]
-    X: np.ndarray = field(default_factory=lambda: np.empty((0, 3), dtype=np.float64))
+    X: np.ndarray = field(default_factory=lambda: np.empty((0, 3), dtype=np.float32))
 
     # C^i: Candidate 2D Keypoints [M, 2]
-    C: np.ndarray = field(default_factory=lambda: np.empty((0, 2), dtype=np.float64))
+    C: np.ndarray = field(default_factory=lambda: np.empty((0, 2), dtype=np.float32))
     # F^i: First observation pixel coords [M, 2]
-    F: np.ndarray = field(default_factory=lambda: np.empty((0, 2), dtype=np.float64))
+    F: np.ndarray = field(default_factory=lambda: np.empty((0, 2), dtype=np.float32))
     # T_first: Camera Pose at first observation [M, 12] (Flattened 3x4)
     T_first: np.ndarray = field(
-        default_factory=lambda: np.empty((0, 12), dtype=np.float64)
+        default_factory=lambda: np.empty((0, 12), dtype=np.float32)
     )
     # ID^i: Unique ID for every tracked point [N,]
     landmark_ids: np.ndarray = field(
@@ -68,7 +67,7 @@ class VoState:
     )
 
     # T_WC: Current Camera Pose [4, 4]
-    pose: np.ndarray = field(default_factory=lambda: np.eye(4, dtype=np.float64))
+    pose: np.ndarray = field(default_factory=lambda: np.eye(4, dtype=np.float32))
 
     # The average depth of landmarks observed at initialization.
     initial_avg_depth: float = 1.0

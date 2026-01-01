@@ -3,7 +3,6 @@ from __future__ import annotations
 import cv2
 import numpy as np
 
-from vision_odometry_pipeline.vo_state import VoState
 from vision_odometry_pipeline.vo_step import VoStep
 
 
@@ -15,9 +14,8 @@ class ImagePreprocessingStep(VoStep):
         self.roi = roi
 
     def process(
-        self, state: VoState, debug: bool
+        self, img: np.ndarray, debug: bool
     ) -> tuple[np.ndarray, np.ndarray | None]:
-        img = state.image_buffer.curr
 
         gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY) if img.ndim == 3 else img
         gray_undistorted = cv2.remap(
