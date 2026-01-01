@@ -117,8 +117,29 @@ class TriangulationStep(VoStep):
 
         # Update P and X
         if len(new_X_list) > 0:
-            full_P = np.vstack([state.P, np.array(new_P_list)])
-            full_X = np.vstack([state.X, np.array(new_X_list)])
+            new_X_arr = np.array(new_X_list)
+            new_P_arr = np.array(new_P_list)
+
+            # Enforce Constant Average Depth (Scale Correction)
+            if state.initial_avg_depth > 0 and state.reset_scale:
+                # Get Current Camera Center (T_WC)
+                current_pose = state.pose
+                C_w = current_pose[:3, 3]  # Camera position in World
+
+                # Calculate current average depth (distance from camera)
+                # Vectors from Camera to Points
+                vecs = new_X_arr - C_w
+                dists = np.linalg.norm(vecs, axis=1)
+                current_avg_depth = np.mean(dists)
+
+                if current_avg_depth > 1e-3:  # Avoid div by zero
+                    # Rescale points relative to the camera center
+                    # X_new = C_w + ratio * (X_old - C_w)
+                    ratio = state.initial_avg_depth / current_avg_depth
+                    new_X_arr = C_w + (vecs * ratio)
+
+            full_P = np.vstack([state.P, new_P_arr])
+            full_X = np.vstack([state.X, new_X_arr])
 
             # Find the max ID currently in use to ensure uniqueness
             start_id = 0

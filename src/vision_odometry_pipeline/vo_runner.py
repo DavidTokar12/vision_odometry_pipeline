@@ -93,7 +93,7 @@ class VoRunner:
             self._state.image_buffer._buffer[-1] = gray_img
 
             # --- Find initial pose and landmarks, update state ---
-            new_C, new_F, new_T, new_X, new_ids, new_P, new_pose, status = (
+            new_C, new_F, new_T, new_X, new_ids, new_P, new_pose, avg_depth, status = (
                 self.pipeline_initialization.process(self._state, self._debug)
             )
 
@@ -107,6 +107,7 @@ class VoRunner:
                     F=new_F,
                     T_first=new_T,
                     pose=new_pose,
+                    initial_avg_depth=avg_depth,
                     pipline_init_stage=2,
                 )
                 print(f"Pipeline initialized after {self._frame_idx} frames.")
@@ -309,6 +310,5 @@ class VoRunner:
     def get_last_timings(self) -> dict[str, float]:
         """Returns timing data for the last processed frame."""
         return {
-            step: times[-1] if times else 0.0
-            for step, times in self._timings.items()
+            step: times[-1] if times else 0.0 for step, times in self._timings.items()
         }

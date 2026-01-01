@@ -35,7 +35,7 @@ class PipelineInitialization(VoStep):
         new_T = state.T_first[st]
 
         if len(new_C) < self.config.min_inliers:
-            return new_C, new_F, new_T, None, None, None, None, False
+            return new_C, new_F, new_T, None, None, None, None, None, False
 
         # For DEBUG / CHEATMODE (TODO: Consider removing again after development)
         if self.config.CHEATMODE:
@@ -73,7 +73,7 @@ class PipelineInitialization(VoStep):
                 print(
                     f"[Init] Poor distribution. Occupied cells: {occupied_cells} < {self.config.min_grid_occupancy}"
                 )
-            return new_C, new_F, new_T, None, None, None, None, False
+            return new_C, new_F, new_T, None, None, None, None, None, False
 
         # --- Baseline Check (Parallax Angle) ---
 
@@ -105,7 +105,7 @@ class PipelineInitialization(VoStep):
         if median_angle < self.config.min_parallax_angle:
             if debug:
                 print(f"[Init] Low parallax. Median: {median_angle:.2f} deg")
-            return new_C, new_F, new_T, None, None, None, None, False
+            return new_C, new_F, new_T, None, None, None, None, None, False
 
         # Create selection mask: Filter points with very low individual parallax
         # (Using half the global threshold to keep points that are contributing)
@@ -133,7 +133,7 @@ class PipelineInitialization(VoStep):
         )
 
         if E is None:
-            return new_C, new_F, new_T, None, None, None, None, False
+            return new_C, new_F, new_T, None, None, None, None, None, False
 
         # Filter by Essential Matrix Inliers
         mask_ess = mask_ess.ravel() == 1
@@ -141,7 +141,7 @@ class PipelineInitialization(VoStep):
         cand_F = cand_F[mask_ess]
 
         if len(cand_C) < self.config.min_inliers:
-            return new_C, new_F, new_T, None, None, None, None, False
+            return new_C, new_F, new_T, None, None, None, None, None, False
 
         # --- Pose Recovery and Cheirality check
 
@@ -156,7 +156,7 @@ class PipelineInitialization(VoStep):
         cand_F = cand_F[pose_inliers]
 
         if len(cand_C) < self.config.min_inliers:
-            return new_C, new_F, new_T, None, None, None, None, False
+            return new_C, new_F, new_T, None, None, None, None, None, False
 
         # --- Triangulation ---
 
@@ -192,6 +192,13 @@ class PipelineInitialization(VoStep):
             new_pose[:3, :3] = R
             new_pose[:3, 3] = t.flatten()
 
+            # Calculate Initial Average Depth
+            # Transform points to Camera Frame to measure depth
+            # X_cam = R * X_w + t
+            X_cam = (R @ new_X.T).T + t.flatten()
+            depths = np.linalg.norm(X_cam, axis=1)
+            avg_depth = np.mean(depths)
+
             # Cleanup Candidates
             keep_mask = np.ones(len(new_C), dtype=bool)
 
@@ -207,9 +214,9 @@ class PipelineInitialization(VoStep):
             rem_F = new_F[keep_mask]
             rem_T = new_T[keep_mask]
 
-            return rem_C, rem_F, rem_T, new_X, new_ids, new_P, new_pose, True
+            return rem_C, rem_F, rem_T, new_X, new_ids, new_P, new_pose, avg_depth, True
 
-        return new_C, new_F, new_T, None, None, None, None, False
+        return new_C, new_F, new_T, None, None, None, None, None, False
 
     def create_undistorted_maps(self, image_size):
         """
@@ -350,7 +357,7 @@ class PipelineInitialization(VoStep):
             print(
                 f"[Init-GT] Error: GT Poses not found for frames {prev_idx}-{curr_idx}"
             )
-            return cand_C, cand_F, cand_T, None, None, None, None, False
+            return cand_C, cand_F, cand_T, None, None, None, None, None, False
 
         print(f"[Init-GT] Cheating with GT Poses for Frame {prev_idx} -> {curr_idx}")
 
@@ -406,10 +413,10 @@ class PipelineInitialization(VoStep):
             # Update all remaining candidates to originate from this valid metric pose
             rem_T[:] = gt_start_pose_flat
 
-            return rem_C, rem_F, rem_T, new_X, new_ids, new_P, new_pose, True
+            return rem_C, rem_F, rem_T, new_X, new_ids, new_P, new_pose, 1, True
 
         print(f"[Init-GT] Waiting for baseline... ({num_valid} valid points)")
-        return cand_C, cand_F, cand_T, None, None, None, None, False
+        return cand_C, cand_F, cand_T, None, None, None, None, None, False
 
     def _load_poses(self, path):
         poses = []
