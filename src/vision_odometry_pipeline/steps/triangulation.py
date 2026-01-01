@@ -139,7 +139,7 @@ class TriangulationStep(VoStep):
         rem_T = state.T_first[keep_mask]
 
         vis = None
-        
+
         if debug:
             # Visualize: Yellow = Waiting, Green = Triangulated this frame
             vis = cv2.cvtColor(state.image_buffer.curr, cv2.COLOR_GRAY2BGR)

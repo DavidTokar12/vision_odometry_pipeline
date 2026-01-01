@@ -305,3 +305,10 @@ class VoRunner:
         if self._debug and folder and image is not None:
             fname = f"{name}.png"
             cv2.imwrite(os.path.join(folder, fname), image)
+
+    def get_last_timings(self) -> dict[str, float]:
+        """Returns timing data for the last processed frame."""
+        return {
+            step: times[-1] if times else 0.0
+            for step, times in self._timings.items()
+        }

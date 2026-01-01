@@ -4,6 +4,8 @@ import argparse
 import logging
 import os
 
+import pandas as pd
+
 from vision_odometry_pipeline.image_sequence import ImageSequence
 from vision_odometry_pipeline.image_sequence import create_config
 from vision_odometry_pipeline.vo_recorder import VoRecorder
@@ -95,6 +97,8 @@ def main():
 
     video_path = os.path.join(sequence.debug_output, "out.mp4")
 
+    timing_history: list[dict[str, float]] = []
+
     logger.info("Initializing VO Runner Process...")
 
     with VoRunnerProcess(
@@ -118,10 +122,13 @@ def main():
             for frame_id, image in sequence:
                 runner.submit_frame(frame_id, image)
                 result = runner.get_result(timeout=30.0)
-
+                
                 if result is None:
                     logger.error("Timeout waiting for frame %d", frame_id)
                     break
+                
+                if result.step_timings:
+                    timing_history.append(result.step_timings)
 
                 recorder.update(
                     image=image,
@@ -143,6 +150,18 @@ def main():
 
     recorder.close()
     logger.info("Video saved to %s", video_path)
+
+    if timing_history:
+        df = pd.DataFrame(timing_history)
+        stats = df.agg(["mean", "std", "min", "max"]).T
+        stats.columns = ["mean_ms", "std_ms", "min_ms", "max_ms"]
+        stats["fps"] = 1000 / stats["mean_ms"]
+        stats = stats.round(2)
+        
+        stats_path = os.path.join(sequence.debug_output, "performance.csv")
+
+        stats.to_csv(stats_path)
+        logger.info("Performance stats saved to %s", stats_path)
 
 
 if __name__ == "__main__":

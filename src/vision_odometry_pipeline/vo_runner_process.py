@@ -19,7 +19,7 @@ class VoFrameResult:
     X: np.ndarray  # [N, 3] 3D landmarks
     trajectory: np.ndarray  # [N, 4, 4] full trajectory
     processing_time_ms: float
-
+    step_timings: dict[str, float]
 
 class VoRunnerProcess:
     """
@@ -176,7 +176,7 @@ def _worker_main(
             if command is None:
                 break
 
-            buffer_idx, frame_id = command
+            buffer_idx, _ = command
 
             shm = shm_buffers[buffer_idx]
             image = np.ndarray(image_shape, dtype=image_dtype, buffer=shm.buf).copy()
@@ -192,6 +192,7 @@ def _worker_main(
                 X=state.X.copy(),
                 trajectory=runner.get_trajectory().copy(),
                 processing_time_ms=processing_time_ms,
+                step_timings=runner.get_last_timings()
             )
 
             result_queue.put(result)

@@ -62,7 +62,8 @@ class VoRecorder:
         # Bottom-Left (1, 0): Landmark Count
         # Bottom-Middle (1, 1): Full Trajectory
         gs = GridSpec(
-            2, 3,
+            2,
+            3,
             figure=self.fig,
             height_ratios=[1.5, 1],
             width_ratios=[1, 1, 1.2],  # Make right column wider
@@ -216,57 +217,64 @@ class VoRecorder:
             self.ax_img.legend(loc="upper right", fontsize="small")
 
     def _update_local_trajectory(
-            self,
-            result: VoFrameResult,
-            full_trajectory: np.ndarray,
-        ) -> None:
-            """Update local trajectory plot (last 20 frames)."""
-            self.ax_local.clear()
-            self.ax_local.set_title("Local Trajectory (last 20 frames)")
-            self.ax_local.set_xlabel("X [m]")
-            self.ax_local.set_ylabel("Z [m]")
-            self.ax_local.grid(True, linestyle=":", alpha=0.6)
+        self,
+        result: VoFrameResult,
+        full_trajectory: np.ndarray,
+    ) -> None:
+        """Update local trajectory plot (last 20 frames)."""
+        self.ax_local.clear()
+        self.ax_local.set_title("Local Trajectory (last 20 frames)")
+        self.ax_local.set_xlabel("X [m]")
+        self.ax_local.set_ylabel("Z [m]")
+        self.ax_local.grid(True, linestyle=":", alpha=0.6)
 
-            if len(full_trajectory) == 0:
-                return
+        if len(full_trajectory) == 0:
+            return
 
-            lookback = 20
-            local_traj = full_trajectory[-lookback:]
-            tx = local_traj[:, 0, 3]
-            tz = local_traj[:, 2, 3]
+        lookback = 20
+        local_traj = full_trajectory[-lookback:]
+        tx = local_traj[:, 0, 3]
+        tz = local_traj[:, 2, 3]
 
-            self.ax_local.plot(tx, tz, "b-o", markersize=3, linewidth=1, label="Path")
+        self.ax_local.plot(tx, tz, "b-o", markersize=3, linewidth=1, label="Path")
 
-            if len(result.X) > 0:
-                self.ax_local.scatter(
-                    result.X[:, 0], result.X[:, 2],
-                    c="black", s=1, alpha=0.5, label="Landmarks"
+        if len(result.X) > 0:
+            self.ax_local.scatter(
+                result.X[:, 0],
+                result.X[:, 2],
+                c="black",
+                s=1,
+                alpha=0.5,
+                label="Landmarks",
+            )
+
+        if self.plot_ground_truth and self.ground_truth is not None:
+            current_frame = result.frame_id
+            start_frame = max(self.first_frame, current_frame - lookback + 1)
+            end_frame = current_frame + 1
+
+            if end_frame <= len(self.ground_truth):
+                gt_local = self.ground_truth[start_frame:end_frame]
+                self.ax_local.plot(
+                    gt_local[:, 0],
+                    gt_local[:, 1],
+                    "r--",
+                    linewidth=1.5,
+                    label="Ground Truth",
                 )
 
-            if self.plot_ground_truth and self.ground_truth is not None:
-                current_frame = result.frame_id
-                start_frame = max(self.first_frame, current_frame - lookback + 1)
-                end_frame = current_frame + 1
+        spread_x = np.ptp(tx)
+        spread_z = np.ptp(tz)
+        radius = max(spread_x, spread_z, 2.0)  # Minimum radius of 2.0
 
-                if end_frame <= len(self.ground_truth):
-                    gt_local = self.ground_truth[start_frame:end_frame]
-                    self.ax_local.plot(
-                        gt_local[:, 0], gt_local[:, 1],
-                        "r--", linewidth=1.5, label="Ground Truth"
-                    )
+        target_xlim = (tx[-1] - radius, tx[-1] + radius)
+        target_ylim = (tz[-1] - radius, tz[-1] + radius)
 
-            spread_x = np.ptp(tx)
-            spread_z = np.ptp(tz)
-            radius = max(spread_x, spread_z, 2.0)  # Minimum radius of 2.0
+        self._local_xlim = self._smooth_limits(self._local_xlim, target_xlim)
+        self._local_ylim = self._smooth_limits(self._local_ylim, target_ylim)
 
-            target_xlim = (tx[-1] - radius, tx[-1] + radius)
-            target_ylim = (tz[-1] - radius, tz[-1] + radius)
-
-            self._local_xlim = self._smooth_limits(self._local_xlim, target_xlim)
-            self._local_ylim = self._smooth_limits(self._local_ylim, target_ylim)
-
-            self.ax_local.set_xlim(self._local_xlim)
-            self.ax_local.set_ylim(self._local_ylim)
+        self.ax_local.set_xlim(self._local_xlim)
+        self.ax_local.set_ylim(self._local_ylim)
 
     def _update_landmark_count(self) -> None:
         """Update landmark count history plot."""
