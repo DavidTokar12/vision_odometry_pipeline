@@ -16,6 +16,7 @@ from vision_odometry_pipeline.vo_runner_process import VoFrameResult
 
 matplotlib.use("Agg")
 logging.getLogger("matplotlib").setLevel(logging.WARNING)
+logging.getLogger("matplotlib.axes._base").setLevel(logging.ERROR)
 
 
 class VoRecorder:
@@ -339,7 +340,7 @@ class VoRecorder:
 
         self.ax_full.set_xlim(self._full_xlim)
         self.ax_full.set_ylim(self._full_ylim)
-        self.ax_full.set_aspect("equal")
+        self.ax_full.set_aspect("equal", adjustable="datalim")
 
     def _write_frame(self) -> None:
         """Render figure and write to video."""

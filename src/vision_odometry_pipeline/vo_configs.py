@@ -72,8 +72,8 @@ class PoseEstimationConfig:
 
     # --- P3P RANSAC ---
     ransac_prob: float = 0.999
-    repr_error: float = 10.0  # Max reprojection error for PnP inliers (pixels)
-    iterations_count: int = 500  # Max RANSAC iterations
+    repr_error: float = 2.0  # Max reprojection error for PnP inliers (pixels)
+    iterations_count: int = 100  # Max RANSAC iterations
     pnp_flags: int = cv2.SOLVEPNP_P3P  # PnP Method (P3P is fast for minimal sets)
 
     # --- Least Square ----
@@ -93,7 +93,7 @@ class ReplenishmentConfig:
     # --- Feature Detection (Shi-Tomasi/Harris) ---
     max_features: int = 4000  # Target total number of active features in the system
     min_dist: int = 7  # Minimum pixel distance between features
-    quality_level: float = 0.01  # Corner quality level (0.0 to 1.0)
+    quality_level: float = 0.02  # Corner quality level (0.0 to 1.0)
     block_size: int = 3  # Block size for corner computation
     mask_radius: int = (
         7  # Radius around existing points to mask out (usually same as min_dist)
@@ -130,6 +130,8 @@ class TriangulationConfig:
     )
     min_depth: float = 0.0  # Points must be in front of camera
 
+    reset_scale = True
+
 
 @dataclass
 class LocalBundleAdjustmentConfig:
@@ -137,7 +139,7 @@ class LocalBundleAdjustmentConfig:
 
     enable_ba = True
 
-    window_size: int = 5  # Number of frames in sliding window
+    window_size: int = 7  # Number of frames in sliding window
 
     # Solver constraints
     max_nfev: int = 7  # Max solver iterations per frame (Speed control)

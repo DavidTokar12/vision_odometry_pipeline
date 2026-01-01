@@ -71,7 +71,6 @@ class VoState:
     pose: np.ndarray = field(default_factory=lambda: np.eye(4, dtype=np.float64))
 
     # The average depth of landmarks observed at initialization.
-    reset_scale = False
     initial_avg_depth: float = 1.0
 
     frame_id: int = 0

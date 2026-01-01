@@ -121,7 +121,7 @@ class TriangulationStep(VoStep):
             new_P_arr = np.array(new_P_list)
 
             # Enforce Constant Average Depth (Scale Correction)
-            if state.initial_avg_depth > 0 and state.reset_scale:
+            if state.initial_avg_depth > 0 and self.config.reset_scale:
                 # Get Current Camera Center (T_WC)
                 current_pose = state.pose
                 C_w = current_pose[:3, 3]  # Camera position in World
