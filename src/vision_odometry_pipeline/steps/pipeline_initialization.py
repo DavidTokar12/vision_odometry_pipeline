@@ -16,20 +16,19 @@ class PipelineInitialization(VoStep):
         self.initial_D = D
         self.optimal_K = None
 
-        # For DEBUG / CHEAT mode
-        # TODO: Don't forget to remove again
+        # For DEBUG / CHEATMODE (TODO: Consider removing again after development)
         self._cached_gt_poses = None
 
     def process(self, state: VoState, debug: bool):
         img_prev = state.image_buffer.prev
         img_curr = state.image_buffer.curr
 
-        # 1. Track Keypoints
+        # --- Tracking ---
         p0 = state.C.astype(np.float32)
         p1, st = self._track_features_bidirectional(img_prev, img_curr, p0)
         p1 = p1.reshape(-1, 2)
 
-        # 2. Update Candidates (Keep only tracked points)
+        # Update Candidates (Keep only tracked points)
         st = st.flatten() == 1
         new_C = p1[st]  # Current pixel coords
         new_F = state.F[st]  # First pixel coords (Init start)
@@ -38,13 +37,12 @@ class PipelineInitialization(VoStep):
         if len(new_C) < self.config.min_inliers:
             return new_C, new_F, new_T, None, None, None, None, False
 
-        # For DEBUG / CHEAT mode
-        # TODO: Don't forget to remove again
+        # For DEBUG / CHEATMODE (TODO: Consider removing again after development)
         if self.config.CHEATMODE:
             return self._process_with_gt(state, new_C, new_F, new_T)
 
-        # --- NEW: Spatial Distribution Check (Bucketing) ---
-        # Goal: Ensure features are well-distributed across the image
+        # --- Bucketing ---
+
         h, w = img_curr.shape
         grid_rows = self.config.grid_rows
         grid_cols = self.config.grid_cols
@@ -76,10 +74,10 @@ class PipelineInitialization(VoStep):
                     f"[Init] Poor distribution. Occupied cells: {occupied_cells} < {self.config.min_grid_occupancy}"
                 )
             return new_C, new_F, new_T, None, None, None, None, False
-        # ---------------------------------------------------
 
-        # --- CHANGED: Baseline Check (Parallax Angle) ---
-        # 1. Reconstruct bearing vectors (assuming undistorted images & optimal_K)
+        # --- Baseline Check (Parallax Angle) ---
+
+        # Reconstruct bearing vectors (assuming undistorted images & optimal_K)
         fx, fy = self.optimal_K[0, 0], self.optimal_K[1, 1]
         cx, cy = self.optimal_K[0, 2], self.optimal_K[1, 2]
 
@@ -93,16 +91,16 @@ class PipelineInitialization(VoStep):
             axis=1,
         )
 
-        # 2. Normalize to unit vectors
+        # Normalize to unit vectors
         vec_C /= np.linalg.norm(vec_C, axis=1, keepdims=True)
         vec_F /= np.linalg.norm(vec_F, axis=1, keepdims=True)
 
-        # 3. Compute angle (Dot Product)
+        # Compute angle (Dot Product)
         # Clip to [-1, 1] to avoid NaN errors from floating point precision
         cos_angles = np.clip(np.sum(vec_C * vec_F, axis=1), -1.0, 1.0)
         angles_deg = np.degrees(np.arccos(cos_angles))
 
-        # 4. Check global baseline condition (Median Angle)
+        # Check global baseline condition (Median Angle)
         median_angle = np.median(angles_deg)
         if median_angle < self.config.min_parallax_angle:
             if debug:
@@ -114,7 +112,8 @@ class PipelineInitialization(VoStep):
         ready_mask = angles_deg > (
             self.config.min_parallax_angle * self.config.parallax_factor
         )
-        # -------------------------------------------------
+
+        # --- Compute Essential Matrx ---
 
         # Only use the 'ready' points to compute the Essential Matrix
         cand_C = new_C[ready_mask]
@@ -123,7 +122,7 @@ class PipelineInitialization(VoStep):
         cand_C = new_C[ready_mask]
         cand_F = new_F[ready_mask]
 
-        # 3. Compute Essential Matrix
+        # Compute Essential Matrix
         E, mask_ess = cv2.findEssentialMat(
             cand_F,
             cand_C,
@@ -144,7 +143,8 @@ class PipelineInitialization(VoStep):
         if len(cand_C) < self.config.min_inliers:
             return new_C, new_F, new_T, None, None, None, None, False
 
-        # Recover Pose (R, t)
+        # --- Pose Recovery and Cheirality check
+
         _, R, t, mask_pose = cv2.recoverPose(E, cand_F, cand_C, self.optimal_K)
 
         # Scale decision
@@ -158,7 +158,8 @@ class PipelineInitialization(VoStep):
         if len(cand_C) < self.config.min_inliers:
             return new_C, new_F, new_T, None, None, None, None, False
 
-        # Triangulation
+        # --- Triangulation ---
+
         M0 = self.optimal_K @ np.hstack((np.eye(3), np.zeros((3, 1))))
         M1 = self.optimal_K @ np.hstack((R, t))
 
@@ -210,8 +211,124 @@ class PipelineInitialization(VoStep):
 
         return new_C, new_F, new_T, None, None, None, None, False
 
-    # For DEBUG / CHEAT mode
-    # TODO: Don't forget to remove again
+    def create_undistorted_maps(self, image_size):
+        """
+        Generate lookup maps to remove image distortion.
+        """
+        h, w = image_size
+
+        if self.initial_D is None or np.all(np.abs(self.initial_D) < 1e-5):
+            print("[Init] Rectified image detected (D~0). Forcing Original K.")
+
+            # 1. Force Optimal K to be identical to Original K
+            self.optimal_K = self.initial_K.copy()
+
+            # 2. Update internal params
+            self.fx, self.fy = self.optimal_K[0, 0], self.optimal_K[1, 1]
+            self.cx, self.cy = self.optimal_K[0, 2], self.optimal_K[1, 2]
+
+            # 3. Create Identity Maps (No remapping/interpolation)
+            map_x, map_y = np.meshgrid(np.arange(w), np.arange(h))
+            map_x = map_x.astype(np.float32)
+            map_y = map_y.astype(np.float32)
+
+            # ROI is the full image
+            roi = (0, 0, w, h)
+
+            return map_x, map_y, roi, self.optimal_K
+
+        self.optimal_K, roi = cv2.getOptimalNewCameraMatrix(
+            self.initial_K, self.initial_D, (w, h), alpha=0, newImgSize=(w, h)
+        )
+
+        map_x, map_y = cv2.initUndistortRectifyMap(
+            self.initial_K,
+            self.initial_D,
+            None,
+            self.optimal_K,
+            (w, h),
+            cv2.CV_16SC2,
+        )
+
+        # Adjust Principal Point for the ROI crop
+        x, y, _, _ = roi
+        self.optimal_K[0, 2] -= x  # cx' = cx - x
+        self.optimal_K[1, 2] -= y  # cy' = cy - y
+
+        # Update focal lengths and principal point with optimal values
+        self.fx, self.fy = self.optimal_K[0, 0], self.optimal_K[1, 1]
+        self.cx, self.cy = self.optimal_K[0, 2], self.optimal_K[1, 2]
+
+        return map_x, map_y, roi, self.optimal_K
+
+    def _track_features_bidirectional(self, img0, img1, p0):
+        lk_params = {
+            "winSize": self.config.lk_win_size,
+            "maxLevel": self.config.lk_max_level,
+            "criteria": self.config.lk_criteria,
+        }
+        # Forward flow
+        p1, st1, _ = cv2.calcOpticalFlowPyrLK(img0, img1, p0, None, **lk_params)
+        # Backward flow
+        p0r, st2, _ = cv2.calcOpticalFlowPyrLK(img1, img0, p1, None, **lk_params)
+
+        # Check consistency (L-infinity norm)
+        dist = abs(p0 - p0r).reshape(-1, 2).max(-1)
+        good_mask = (
+            (st1.flatten() == 1)
+            & (st2.flatten() == 1)
+            & (dist < self.config.fb_max_dist)
+        )
+
+        return p1, good_mask
+
+    def find_initial_features(self, state: VoState):
+        img = state.image_buffer.curr
+
+        # Split image into a 4x4 grid (16 tiles) to force distribution
+        # You can adjust grid_size based on resolution (e.g., 4 or 5)
+        h, w = img.shape
+        h_step = h // self.config.tile_rows
+        w_step = w // self.config.tile_cols
+
+        # Lower contrast threshold slightly to find points in duller areas
+        # nfeatures per tile cap prevents one tile from dominating
+        sift = cv2.SIFT_create(
+            nfeatures=self.config.n_features,
+            contrastThreshold=self.config.contrast_threshold,
+        )
+
+        all_keypoints = []
+
+        for r in range(self.config.grid_rows):
+            for c in range(self.config.grid_cols):
+                # Define ROI (Region of Interest)
+                x1, x2 = c * w_step, (c + 1) * w_step
+                y1, y2 = r * h_step, (r + 1) * h_step
+
+                # Detect in the tile
+                tile = img[y1:y2, x1:x2]
+                kps = sift.detect(tile, None)
+
+                # Shift keypoint coordinates back to global frame
+                for kp in kps:
+                    kp.pt = (kp.pt[0] + x1, kp.pt[1] + y1)
+                    all_keypoints.append(kp)
+
+        keypoints = np.array([kp.pt for kp in all_keypoints], dtype=np.float32).reshape(
+            -1, 2
+        )
+
+        if len(keypoints) < self.config.min_init_features:
+            print("Warning: Low feature count in initialization frame")
+
+        identity_pose_flat = np.hstack((np.eye(3), np.zeros((3, 1)))).flatten()
+        T_first_init = np.tile(identity_pose_flat, (len(keypoints), 1))
+
+        return keypoints, keypoints, T_first_init
+
+    # --- DEBUG / CHEATMODE methods (TODO: Consider removing after development) ---
+
     def _process_with_gt(self, state, cand_C, cand_F, cand_T):
         """Hijacked logic using Ground Truth."""
         if self._cached_gt_poses is None:
@@ -294,8 +411,6 @@ class PipelineInitialization(VoStep):
         print(f"[Init-GT] Waiting for baseline... ({num_valid} valid points)")
         return cand_C, cand_F, cand_T, None, None, None, None, False
 
-    # For DEBUG / CHEAT mode
-    # TODO: Don't forget to remove again
     def _load_poses(self, path):
         poses = []
         with open(path) as f:
@@ -306,125 +421,7 @@ class PipelineInitialization(VoStep):
                 poses.append(np.array(vals).reshape(3, 4))
         return poses
 
-    # For DEBUG / CHEAT mode
-    # TODO: Don't forget to remove again
     def _inv_pose(self, T):
         R = T[:3, :3]
         t = T[:3, 3]
         return np.hstack((R.T, (-R.T @ t).reshape(3, 1)))
-
-    def find_initial_features(self, state: VoState):
-        img = state.image_buffer.curr
-
-        # Split image into a 4x4 grid (16 tiles) to force distribution
-        # You can adjust grid_size based on resolution (e.g., 4 or 5)
-        h, w = img.shape
-        h_step = h // self.config.tile_rows
-        w_step = w // self.config.tile_cols
-
-        # Lower contrast threshold slightly to find points in duller areas
-        # nfeatures per tile cap prevents one tile from dominating
-        sift = cv2.SIFT_create(
-            nfeatures=self.config.n_features,
-            contrastThreshold=self.config.contrast_threshold,
-        )
-
-        all_keypoints = []
-
-        for r in range(self.config.grid_rows):
-            for c in range(self.config.grid_cols):
-                # Define ROI (Region of Interest)
-                x1, x2 = c * w_step, (c + 1) * w_step
-                y1, y2 = r * h_step, (r + 1) * h_step
-
-                # Detect in the tile
-                tile = img[y1:y2, x1:x2]
-                kps = sift.detect(tile, None)
-
-                # Shift keypoint coordinates back to global frame
-                for kp in kps:
-                    kp.pt = (kp.pt[0] + x1, kp.pt[1] + y1)
-                    all_keypoints.append(kp)
-
-        keypoints = np.array([kp.pt for kp in all_keypoints], dtype=np.float32).reshape(
-            -1, 2
-        )
-
-        if len(keypoints) < self.config.min_init_features:
-            print("Warning: Low feature count in initialization frame")
-
-        identity_pose_flat = np.hstack((np.eye(3), np.zeros((3, 1)))).flatten()
-        T_first_init = np.tile(identity_pose_flat, (len(keypoints), 1))
-
-        return keypoints, keypoints, T_first_init
-
-    def create_undistorted_maps(self, image_size):
-        """
-        Generate lookup maps to remove image distortion.
-        """
-        h, w = image_size
-
-        if self.initial_D is None or np.all(np.abs(self.initial_D) < 1e-5):
-            print("[Init] Rectified image detected (D~0). Forcing Original K.")
-
-            # 1. Force Optimal K to be identical to Original K
-            self.optimal_K = self.initial_K.copy()
-
-            # 2. Update internal params
-            self.fx, self.fy = self.optimal_K[0, 0], self.optimal_K[1, 1]
-            self.cx, self.cy = self.optimal_K[0, 2], self.optimal_K[1, 2]
-
-            # 3. Create Identity Maps (No remapping/interpolation)
-            map_x, map_y = np.meshgrid(np.arange(w), np.arange(h))
-            map_x = map_x.astype(np.float32)
-            map_y = map_y.astype(np.float32)
-
-            # ROI is the full image
-            roi = (0, 0, w, h)
-
-            return map_x, map_y, roi, self.optimal_K
-
-        self.optimal_K, roi = cv2.getOptimalNewCameraMatrix(
-            self.initial_K, self.initial_D, (w, h), alpha=0, newImgSize=(w, h)
-        )
-
-        map_x, map_y = cv2.initUndistortRectifyMap(
-            self.initial_K,
-            self.initial_D,
-            None,
-            self.optimal_K,
-            (w, h),
-            cv2.CV_16SC2,
-        )
-
-        # Adjust Principal Point for the ROI crop
-        x, y, _, _ = roi
-        self.optimal_K[0, 2] -= x  # cx' = cx - x
-        self.optimal_K[1, 2] -= y  # cy' = cy - y
-
-        # Update focal lengths and principal point with optimal values
-        self.fx, self.fy = self.optimal_K[0, 0], self.optimal_K[1, 1]
-        self.cx, self.cy = self.optimal_K[0, 2], self.optimal_K[1, 2]
-
-        return map_x, map_y, roi, self.optimal_K
-
-    def _track_features_bidirectional(self, img0, img1, p0):
-        lk_params = {
-            "winSize": self.config.lk_win_size,
-            "maxLevel": self.config.lk_max_level,
-            "criteria": self.config.lk_criteria,
-        }
-        # Forward flow
-        p1, st1, _ = cv2.calcOpticalFlowPyrLK(img0, img1, p0, None, **lk_params)
-        # Backward flow
-        p0r, st2, _ = cv2.calcOpticalFlowPyrLK(img1, img0, p1, None, **lk_params)
-
-        # Check consistency (L-infinity norm)
-        dist = abs(p0 - p0r).reshape(-1, 2).max(-1)
-        good_mask = (
-            (st1.flatten() == 1)
-            & (st2.flatten() == 1)
-            & (dist < self.config.fb_max_dist)
-        )
-
-        return p1, good_mask

@@ -47,7 +47,6 @@ class PoseEstimationStep(VoStep):
         new_pose = state.pose.copy()
 
         # Filter Outliers
-        # -------------------------------------
         if success:
             inlier_mask = inliers.flatten()
             P_in = state.P[inlier_mask]

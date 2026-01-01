@@ -73,12 +73,12 @@ class TriangulationStep(VoStep):
             pt2 = state.C[idx].reshape(2, 1)
             point_4d = cv2.triangulatePoints(M1, M2, pt1, pt2)
 
-            # 1. Filter points at infinity
+            # Filter points at infinity
             if abs(point_4d[3]) < 1e-6:
                 keep_mask[idx] = False  # Garbage
                 continue
 
-            # 2. Angle Check (Parallax)
+            # Angle Check (Parallax)
             X = (point_4d[:3] / point_4d[3].flatten()).flatten()
             v1 = X - T_WC_first[:3, 3]
             v2 = X - T_WC_curr[:3, 3]
@@ -93,7 +93,7 @@ class TriangulationStep(VoStep):
             if angle_deg < self.config.min_angle_deg:
                 continue
 
-            # 3. Cheirality (Behind camera?) and Max Depth Check
+            # Cheirality (Behind camera?) and Max Depth Check
             X_local_curr = R_CW_curr @ X + t_CW_curr.flatten()
             if (
                 X_local_curr[2] < self.config.min_depth

@@ -49,9 +49,6 @@ class KeypointTrackingStep(VoStep):
         st_p = np.empty((0,), dtype=np.uint8)
 
         if len(p0) > 0:
-            # p1, st_p, _ = cv2.calcOpticalFlowPyrLK(
-            #     img_prev, img_curr, p0, None, **self.lk_params
-            # )
             p1, st_p = self._track_features_bidirectional(img_prev, img_curr, p0)
             st_p = st_p.reshape(-1)
 
@@ -61,30 +58,29 @@ class KeypointTrackingStep(VoStep):
         st_c = np.empty((0,), dtype=np.uint8)
 
         if len(c0) > 0:
-            # c1, st_c, _ = cv2.calcOpticalFlowPyrLK(
-            #     img_prev, img_curr, c0, None, **self.lk_params
-            # )
             c1, st_c = self._track_features_bidirectional(img_prev, img_curr, c0)
             st_c = st_c.reshape(-1)
 
-        # # Filter Data
-        # # --------------------------------
-        # # Filter P and align X
-        # valid_p = st_p == 1
-        # new_P = p1[valid_p]
-        # new_X = state.X[valid_p]
-        # new_ids = state.landmark_ids[valid_p]
-
-        # # Filter C and align F, T
-        # valid_c = st_c == 1
-        # new_C = c1[valid_c]
-        # new_F = state.F[valid_c]
-        # new_T = state.T_first[valid_c]
-
-        # Filter Data
+        """ (TODO: potentially remove)
+        # Filter Data (without 8-Point RANSAC) 
         # --------------------------------
+        # Filter P and align X
+        valid_p = st_p == 1
+        new_P = p1[valid_p]
+        new_X = state.X[valid_p]
+        new_ids = state.landmark_ids[valid_p]
 
-        # 1. Gather all successfully tracked points for 8-Point RANSAC
+        # Filter C and align F, T
+        valid_c = st_c == 1
+        new_C = c1[valid_c]
+        new_F = state.F[valid_c]
+        new_T = state.T_first[valid_c]
+        """
+
+        # --- Filter Data (With 8-Point RANSAC) ---
+        # (TODO: potentially remove or clean up)
+
+        # Gather all successfully tracked points for 8-Point RANSAC
         # Convert boolean masks to indices to easily map RANSAC results back
         idx_p_good = np.where(st_p == 1)[0]
         idx_c_good = np.where(st_c == 1)[0]
@@ -93,7 +89,7 @@ class KeypointTrackingStep(VoStep):
         pts_prev_all = np.vstack((p0[idx_p_good], c0[idx_c_good]))
         pts_curr_all = np.vstack((p1[idx_p_good], c1[idx_c_good]))
 
-        # 2. Run 8-Point RANSAC
+        # Run 8-Point RANSAC
         if len(pts_prev_all) >= 8:
             _, ransac_mask = cv2.findFundamentalMat(
                 pts_prev_all,
@@ -107,13 +103,12 @@ class KeypointTrackingStep(VoStep):
         else:
             ransac_mask = np.ones(len(pts_prev_all), dtype=bool)
 
-        # 3. Split mask back to P and C components
+        # Split mask back to P and C components
         split_idx = len(idx_p_good)
         mask_p_ransac = ransac_mask[:split_idx]
         mask_c_ransac = ransac_mask[split_idx:]
 
-        # 4. Apply combined filter (KLT Status AND RANSAC Inlier)
-        # Update the original 'good' indices to keep only RANSAC inliers
+        # Apply combined filter (KLT Status AND RANSAC Inlier)
         final_idx_p = idx_p_good[mask_p_ransac]
         final_idx_c = idx_c_good[mask_c_ransac]
 

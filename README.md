@@ -33,11 +33,6 @@ This option has to be set up manually in the `steps/pipeline_initialization.py` 
   - !!! Make sure this path matches the selection in `main.py` !!!
   - Note that this will override the previous output video. Rename the old video if you want to keep it.
 
-
-### Shortcomings
-The following point may be problematic for a more general VO pipeline as they are currently implemented in a very basic way:
-- Parameters for the PNP/Ransac and the KTL functions were determined by trial and error to work with the provided datasets.
-
 ## Project Tools
 
 ### Package Management: uv

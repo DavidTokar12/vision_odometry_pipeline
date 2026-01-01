@@ -90,7 +90,7 @@ class VoRecorder:
         curr_img_rgb = cv2.cvtColor(state.image_buffer.curr, cv2.COLOR_BGR2RGB)
 
         # ---------------------------------------------------------
-        # 1. Update Current Image Display
+        # Update Current Image Display
         # ---------------------------------------------------------
 
         self.ax_img.set_title(f"Current Frame {state.frame_id}")
@@ -139,7 +139,7 @@ class VoRecorder:
             self.ax_img.legend(loc="upper right", fontsize="small")
 
         # ---------------------------------------------------------
-        # 2. Plot Local Trajectory & Landmarks (Right Column)
+        # Plot Local Trajectory & Landmarks (Right Column)
         # ---------------------------------------------------------
         # Displays the last 20 frames and currently active landmarks
 
@@ -199,7 +199,7 @@ class VoRecorder:
             self.ax_local.set_ylim(tz[-1] - radius, tz[-1] + radius)
 
         # ---------------------------------------------------------
-        # 3. Plot Landmark Count History (Bottom Left)
+        # Plot Landmark Count History (Bottom Left)
         # ---------------------------------------------------------
         self.ax_count.clear()
         self.ax_count.set_title("# tracked landmarks (last 20 frames)")
@@ -212,7 +212,7 @@ class VoRecorder:
         self.ax_count.set_ylim(bottom=0)
 
         # ---------------------------------------------------------
-        # 4. Plot Full Trajectory (Bottom Middle)
+        # Plot Full Trajectory (Bottom Middle)
         # ---------------------------------------------------------
         self.ax_full.clear()
         self.ax_full.set_title("Full Trajectory")
