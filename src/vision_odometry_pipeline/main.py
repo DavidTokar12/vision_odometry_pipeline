@@ -30,7 +30,7 @@ def parse_args() -> argparse.Namespace:
         "-d",
         "--dataset",
         type=str,
-        default="parking",
+        default="kitti",
         choices=["parking", "kitti", "malaga", "0", "1", "2"],
         help="Dataset to process",
     )
@@ -122,11 +122,11 @@ def main():
             for frame_id, image in sequence:
                 runner.submit_frame(frame_id, image)
                 result = runner.get_result(timeout=30.0)
-                
+
                 if result is None:
                     logger.error("Timeout waiting for frame %d", frame_id)
                     break
-                
+
                 if result.step_timings:
                     timing_history.append(result.step_timings)
 
@@ -157,7 +157,7 @@ def main():
         stats.columns = ["mean_ms", "std_ms", "min_ms", "max_ms"]
         stats["fps"] = 1000 / stats["mean_ms"]
         stats = stats.round(2)
-        
+
         stats_path = os.path.join(sequence.debug_output, "performance.csv")
 
         stats.to_csv(stats_path)

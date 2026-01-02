@@ -1,3 +1,5 @@
+# This config looks somewhat reasonable using the rescaling
+
 from dataclasses import dataclass
 
 import cv2
@@ -7,13 +9,13 @@ import cv2
 class KeypointTrackingConfig:
     """Configuration for KLT Optical Flow tracking."""
 
-    win_size: tuple[int, int] = (23, 23)  # Window size for LK optical flow
-    max_level: int = 4  # Number of pyramid levels
+    win_size: tuple[int, int] = (15, 15)  # Window size for LK optical flow
+    max_level: int = 5  # Number of pyramid levels
     # Termination criteria: (Type, Max_Iter, Epsilon)
-    criteria: tuple = (cv2.TERM_CRITERIA_EPS | cv2.TERM_CRITERIA_COUNT, 30, 0.03)
+    criteria: tuple = (cv2.TERM_CRITERIA_EPS | cv2.TERM_CRITERIA_COUNT, 100, 0.01)
 
     bidirectional_error: float = (
-        2.0  # Threshold for forward-backward consistency check (pixels)
+        1.2  # Threshold for forward-backward consistency check (pixels)
     )
 
     # --- 8-Point RANSAC ---
@@ -72,16 +74,16 @@ class PoseEstimationConfig:
 
     # --- P3P RANSAC ---
     ransac_prob: float = 0.999
-    repr_error: float = 2.0  # Max reprojection error for PnP inliers (pixels)
-    iterations_count: int = 100  # Max RANSAC iterations
-    pnp_flags: int = cv2.SOLVEPNP_P3P  # PnP Method (P3P is fast for minimal sets)
+    repr_error: float = 1.3  # Max reprojection error for PnP inliers (pixels)
+    iterations_count: int = 800  # Max RANSAC iterations
+    pnp_flags: int = cv2.SOLVEPNP_ITERATIVE  # PnP Method (P3P is fast for minimal sets)
 
     # --- Least Square ----
     # Robust loss function (linear for errors > f_scale), default is "linear"
     # Options: 'linear' (default/brittle), 'huber', 'soft_l1', 'cauchy', 'arctan'
     refinement_loss: str = "huber"
     # Outlier threshold in pixels. Ignored if loss is 'linear'.
-    refinement_f_scale: float = 0.6
+    refinement_f_scale: float = 0.8
 
 
 @dataclass
@@ -91,7 +93,7 @@ class ReplenishmentConfig:
     """
 
     # --- Feature Detection (Shi-Tomasi/Harris) ---
-    max_features: int = 4000  # Target total number of active features in the system
+    max_features: int = 1000  # Target total number of active features in the system
     min_dist: int = 7  # Minimum pixel distance between features
     quality_level: float = 0.02  # Corner quality level (0.0 to 1.0)
     block_size: int = 3  # Block size for corner computation
@@ -108,10 +110,10 @@ class ReplenishmentConfig:
     grid_rows: int = 7
     grid_cols: int = 7
 
-    cell_cap_multiplier = 2
-    global_feature_multiplier = 8
+    cell_cap_multiplier = 1.0
+    global_feature_multiplier = 10
 
-    min_feature_factor = 0.6
+    min_feature_factor = 0.8
 
 
 @dataclass
@@ -124,10 +126,8 @@ class TriangulationConfig:
     )
 
     # --- Geometric Filtering ---
-    min_angle_deg: float = 0.7  # Minimum triangulation angle (degrees)
-    max_depth: float = (
-        100.0  # Maximum allowed depth (meters) to prevent unstable points
-    )
+    min_angle_deg: float = 1.5  # Minimum triangulation angle (degrees)
+    max_depth: float = 80.0  # Maximum allowed depth (meters) to prevent unstable points
     min_depth: float = 0.0  # Points must be in front of camera
 
     reset_scale = True
@@ -139,7 +139,7 @@ class LocalBundleAdjustmentConfig:
 
     enable_ba = True
 
-    window_size: int = 7  # Number of frames in sliding window
+    window_size: int = 15  # Number of frames in sliding window
 
     # Solver constraints
     max_nfev: int = 7  # Max solver iterations per frame (Speed control)
