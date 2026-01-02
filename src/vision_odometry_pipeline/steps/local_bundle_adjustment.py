@@ -378,7 +378,8 @@ class LocalBundleAdjustmentStep(VoStep):
 
             # 2. Rotation Part (d_Xcam / d_w = -[X_cam]_x)
             # J_rot = J_proj @ -skew(X_cam)
-            skew_X = _batched_skew_symmetric(X_cam_opt)
+            X_rot = X_cam_opt - t_vecs
+            skew_X = _batched_skew_symmetric(X_rot)
             J_rot = -np.einsum("nij,njk->nik", J_proj_opt, skew_X)  # (M, 2, 3)
 
             # Combine [J_rot, J_trans] -> (M, 2, 6)

@@ -119,14 +119,12 @@ class TriangulationConfig:
     """Configuration for mapping 2D points to 3D."""
 
     # --- Candidate Selection ---
-    min_pixel_dist: float = (
-        3.0  # Min pixel displacement before attempting triangulation
-    )
+    min_pixel_dist: float = 3  # Min pixel displacement before attempting triangulation
 
     # --- Geometric Filtering ---
-    min_angle_deg: float = 0.7  # Minimum triangulation angle (degrees)
+    min_angle_deg: float = 2.0  # Minimum triangulation angle (degrees)
     max_depth: float = (
-        100.0  # Maximum allowed depth (meters) to prevent unstable points
+        150.0  # Maximum allowed depth (meters) to prevent unstable points
     )
     min_depth: float = 0.0  # Points must be in front of camera
 
@@ -143,11 +141,11 @@ class LocalBundleAdjustmentConfig:
 
     # Solver constraints
     max_nfev: int = 7  # Max solver iterations per frame (Speed control)
-    ftol: float = 1e-3  # Convergence tolerance
+    ftol: float = 1e-2  # Convergence tolerance
 
     # Outlier rejection
     loss_function: str = "huber"  # Robust loss
     f_scale: float = 0.8  # Outlier threshold in pixels
 
     # Post-optimization cleaning
-    max_reproj_error: float = 3.0  # Points with error > 3.0px after BA are deleted
+    max_reproj_error: float = 1.0  # Points with error > 3.0px after BA are deleted
