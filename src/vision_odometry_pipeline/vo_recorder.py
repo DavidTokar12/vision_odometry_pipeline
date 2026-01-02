@@ -224,9 +224,10 @@ class VoRecorder:
     ) -> None:
         """Update local trajectory plot (last 20 frames)."""
         self.ax_local.clear()
-        self.ax_local.set_title("Local Trajectory (last 20 frames)")
+        self.ax_local.set_title("Trajectory of last 20 frames")
         self.ax_local.set_xlabel("X [m]")
         self.ax_local.set_ylabel("Z [m]")
+        self.ax_local.set_aspect("equal", adjustable="datalim")
         self.ax_local.grid(True, linestyle=":", alpha=0.6)
 
         if len(full_trajectory) == 0:
@@ -264,18 +265,12 @@ class VoRecorder:
                     label="Ground Truth",
                 )
 
-        spread_x = np.ptp(tx)
-        spread_z = np.ptp(tz)
-        radius = max(spread_x, spread_z, 2.0)  # Minimum radius of 2.0
+        # Dynamic view scaling based on movement
+        radius_x = max(abs(tx[0] - tx[-1]) * 1.5, 5)
+        radius_y = max(abs(tz[0] - tz[-1]) * 1.5, 5)
 
-        target_xlim = (tx[-1] - radius, tx[-1] + radius)
-        target_ylim = (tz[-1] - radius, tz[-1] + radius)
-
-        self._local_xlim = self._smooth_limits(self._local_xlim, target_xlim)
-        self._local_ylim = self._smooth_limits(self._local_ylim, target_ylim)
-
-        self.ax_local.set_xlim(self._local_xlim)
-        self.ax_local.set_ylim(self._local_ylim)
+        self.ax_local.set_xlim(tx[-1] - radius_x, tx[-1] + radius_x)
+        self.ax_local.set_ylim(tz[-1] - radius_y, tz[-1] + radius_y)
 
     def _update_landmark_count(self) -> None:
         """Update landmark count history plot."""
