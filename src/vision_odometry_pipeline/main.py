@@ -31,7 +31,7 @@ def parse_args() -> argparse.Namespace:
         "--dataset",
         type=str,
         default="parking",
-        choices=["parking", "kitti", "malaga", "0", "1", "2"],
+        choices=["parking", "kitti", "malaga", "polibahn_up", "0", "1", "2", "3"],
         help="Dataset to process",
     )
     parser.add_argument(

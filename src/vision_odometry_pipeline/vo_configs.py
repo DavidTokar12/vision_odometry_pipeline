@@ -43,7 +43,7 @@ class InitializationConfig:
     ransac_prob: float = 0.999  # RANSAC confidence
 
     # --- Parallax / Baseline ---
-    min_parallax_angle: float = 2.0  # Global median parallax angle required (degrees)
+    min_parallax_angle: float = 1.0  # Global median parallax angle required (degrees)
     parallax_factor: float = (
         0.5  # Multiplier for individual point check (0.5 * min_parallax)
     )
