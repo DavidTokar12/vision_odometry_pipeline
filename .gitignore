@@ -2,6 +2,7 @@
 data/
 **.zip
 temp/
+src/testbench/**_results/**.png
 
 # Project outputs
 debug_output/
