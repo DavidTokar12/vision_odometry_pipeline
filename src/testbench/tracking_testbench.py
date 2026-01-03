@@ -3,6 +3,7 @@ import os
 import shutil
 
 import cv2
+import matplotlib.pyplot as plt
 import numpy as np
 
 from vision_odometry_pipeline.steps.key_point_tracker import KeypointTrackingStep
@@ -140,11 +141,42 @@ class TrackingTestbench:
             )
 
             # Save
-            out_name = os.path.join(self.output_folder, f"track_{i:04d}.png")
+            out_name = os.path.join(self.output_folder, f"tracking_{i:04d}.png")
             cv2.imwrite(out_name, vis)
             print(f"Base frame: {i}, Rate: {track_rate * 100:.1f}%", end="\r")
 
+        self.plot_results(history_total, history_tracked, history_rate)
         self.print_summary(history_total, history_tracked, history_rate)
+
+    def plot_results(self, total, tracked, rate):
+        """Plots tracking performance over frames."""
+        frames = range(len(total))
+        _, (ax1, ax2) = plt.subplots(2, 1, figsize=(10, 8), sharex=True)
+
+        # Feature Counts
+        ax1.plot(frames, total, label="Input Features", color="gray", alpha=0.7)
+        ax1.plot(frames, tracked, label="Successfully Tracked", color="green")
+        ax1.set_title("Feature Tracking Counts")
+        ax1.set_ylabel("Count")
+        ax1.legend()
+        ax1.grid(True, linestyle="--", alpha=0.6)
+
+        # Success Rate
+        rate_percent = [r * 100 for r in rate]
+        ax2.plot(frames, rate_percent, color="blue", label="Success Rate")
+        ax2.axhline(y=95, color="green", linestyle="--", label="95% Threshold")
+        ax2.axhline(y=80, color="red", linestyle="--", label="80% Threshold")
+        ax2.set_title("Tracking Success Rate (%)")
+        ax2.set_ylabel("Rate (%)")
+        ax2.set_xlabel("Frame Index")
+        ax2.legend()
+        ax2.grid(True, linestyle="--", alpha=0.6)
+
+        plt.tight_layout()
+        out_path = os.path.join(self.output_folder, "A_tracking_metrics.png")
+        plt.savefig(out_path)
+        print(f"Plot saved to {out_path}")
+        plt.close()
 
     def print_summary(self, h_tot, h_track, h_rate):
         if not h_tot:

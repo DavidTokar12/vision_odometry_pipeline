@@ -3,6 +3,7 @@ import os
 import shutil
 
 import cv2
+import matplotlib.pyplot as plt
 import numpy as np
 
 from vision_odometry_pipeline.steps.key_point_tracker import KeypointTrackingStep
@@ -58,9 +59,6 @@ class PoseTestbench:
         self.pose_est = PoseEstimationStep(self.K)
         self.triangulator = TriangulationStep(self.K)
         self.replenisher = ReplenishmentStep()
-
-        # Config Tuning (Optional Override)
-        self.replenisher.config.max_features = 1500
 
     def load_kitti_poses(self, path):
         """Loads KITTI format poses (12 floats per line: r11 r12 r13 tx ...)."""
@@ -154,9 +152,12 @@ class PoseTestbench:
         traj_est.extend([self.gt_poses[0], self.gt_poses[1]])
         traj_gt.extend([self.gt_poses[0], self.gt_poses[1]])
 
+        # Initialize Previous Poses for Relative Error Calculation
+        prev_gt_pose = self.gt_poses[1]
+        prev_est_pose = state.pose.copy()
+
         # Frame ID tracker
         # Start at 2 because 0 and 1 were bootstrapped
-
         for i in range(2, len(self.img_files)):
             img_path = self.img_files[i]
             img = cv2.imread(img_path, cv2.IMREAD_GRAYSCALE)
@@ -218,28 +219,41 @@ class PoseTestbench:
             traj_est.append(est_pose)
             traj_gt.append(gt_pose)
 
-            # Rotation Error
-            r_err = self.get_rotation_error(est_pose[:3, :3], gt_pose[:3, :3])
+            # --- RELATIVE ERROR CALCULATION ---
+            # Compute relative motion (T_prev -> T_curr) in Camera Frame
+            # T_rel = inv(T_prev) @ T_curr
+            rel_gt = np.linalg.inv(prev_gt_pose) @ gt_pose
+            rel_est = np.linalg.inv(prev_est_pose) @ est_pose
+
+            # Relative Rotation Error
+            r_err = self.get_rotation_error(rel_est[:3, :3], rel_gt[:3, :3])
             history_r_err.append(r_err)
 
-            # Translation Visualization
-            # Since scale drifts, we align 'est' to 'gt' using the ratio of distances from origin
-            # just for the textual output, so the numbers look comparable.
-            t_est = est_pose[:3, 3]
-            t_gt = gt_pose[:3, 3]
+            # Relative Translation Error (Scale Corrected)
+            # We measure PnP accuracy (direction/shape) by normalizing the step length
+            t_rel_est = rel_est[:3, 3]
+            t_rel_gt = rel_gt[:3, 3]
 
-            dist_est = np.linalg.norm(t_est)
-            dist_gt = np.linalg.norm(t_gt)
-            scale_ratio = dist_gt / dist_est if dist_est > 0.1 else 1.0
-            history_scale_ratio.append(scale_ratio)
+            mag_est = np.linalg.norm(t_rel_est)
+            mag_gt = np.linalg.norm(t_rel_gt)
 
-            t_est_scaled = t_est * scale_ratio
-            t_err_abs = np.linalg.norm(t_est_scaled - t_gt)
-            history_t_err_scale_corrected.append(t_err_abs)
+            # Avoid division by zero
+            step_scale = mag_gt / mag_est if mag_est > 1e-7 else 1.0
+
+            # Compare the ESTIMATED step (scaled to match GT length) vs GT step
+            # This isolates direction error from accumulated map scale error
+            t_err_rel = np.linalg.norm(t_rel_est * step_scale - t_rel_gt)
+
+            history_t_err_scale_corrected.append(t_err_rel)
+            history_scale_ratio.append(step_scale)
+
+            # Update Previous Poses
+            prev_gt_pose = gt_pose
+            prev_est_pose = est_pose.copy()
 
             # Output to Console
             print(
-                f"Frame {i} | Inliers: {len(inlier_P)} | R_Err: {r_err:.3f}° | T_Err(S): {t_err_abs:.3f}m | Scale: {scale_ratio:.3f}",
+                f"Frame {i} | Inliers: {len(inlier_P)} | R_Err(Rel): {r_err:.3f}° | T_Err(Rel): {t_err_rel:.3f}m | Step Scale: {step_scale:.3f}",
                 end="\r",
             )
 
@@ -271,7 +285,7 @@ class PoseTestbench:
             )
             cv2.putText(
                 vis,
-                f"Scale Drift: {scale_ratio:.3f}x",
+                f"Scale Drift: {step_scale:.3f}x",
                 (200, 40),
                 cv2.FONT_HERSHEY_SIMPLEX,
                 0.5,
@@ -281,9 +295,44 @@ class PoseTestbench:
 
             cv2.imwrite(os.path.join(self.output_folder, f"pose_{i:04d}.png"), vis)
 
+        self.plot_results(
+            history_r_err, history_t_err_scale_corrected, history_scale_ratio
+        )
         self.print_summary(
             history_r_err, history_t_err_scale_corrected, history_scale_ratio
         )
+
+    def plot_results(self, r_err, t_err, scale_ratio):
+        """Plots pose estimation errors and scale drift."""
+        frames = range(len(r_err))
+        _, axs = plt.subplots(3, 1, figsize=(10, 12), sharex=True)
+
+        # Rotation Error
+        axs[0].plot(frames, r_err, color="orange", label="Rotation Error")
+        axs[0].set_title("Relative Rotation Error (deg)")
+        axs[0].set_ylabel("Error (deg)")
+        axs[0].grid(True, linestyle="--", alpha=0.6)
+
+        # Translation Error (Scale Corrected)
+        axs[1].plot(frames, t_err, color="blue", label="Translation Error")
+        axs[1].set_title("Relative Translation Error (Scale Corrected) (m)")
+        axs[1].set_ylabel("Error (m)")
+        axs[1].grid(True, linestyle="--", alpha=0.6)
+
+        # Scale Ratio
+        axs[2].plot(frames, scale_ratio, color="green", label="Scale Ratio (GT/Est)")
+        axs[2].axhline(y=1.0, color="black", linestyle="--", label="Ideal (1.0)")
+        axs[2].set_title("Scale Ratio (GT Step / Est Step)")
+        axs[2].set_ylabel("Ratio")
+        axs[2].set_xlabel("Frame Index")
+        axs[2].legend()
+        axs[2].grid(True, linestyle="--", alpha=0.6)
+
+        plt.tight_layout()
+        out_path = os.path.join(self.output_folder, "A_pose_metrics.png")
+        plt.savefig(out_path)
+        print(f"Plot saved to {out_path}")
+        plt.close()
 
     def print_summary(self, r_errs, t_errs, scales):
         print("\n" + "=" * 65)
@@ -308,10 +357,12 @@ class PoseTestbench:
 
             # --- Added Scale Metric ---
             sm, smed, smax = stats(scales)
-            print(f"{'Scale Ratio':<20} | {sm:<10.3f} | {smed:<10.3f} | {smax:<10.3f}")
+            print(f"{'Step Scale':<20} | {sm:<10.3f} | {smed:<10.3f} | {smax:<10.3f}")
 
-            print("\n* Translation error is calculated after per-frame scale alignment")
-            print("  to account for Monocular Scale Drift.")
+            print("\n* Translation error is Relative Step Error (Scale Corrected)")
+            print(
+                "  Measures accuracy of the PnP step direction (ignoring map scale drift)."
+            )
 
         print("=" * 65)
 
@@ -330,7 +381,7 @@ if __name__ == "__main__":
     # Update paths
     IMG_DIR = "data/kitti/05/image_0"
     POSE_FILE = "data/kitti/poses/05.txt"
-    OUT_DIR = "src/testbench/triangulation_results"
+    OUT_DIR = "src/testbench/estimation_results"
 
     tb = PoseTestbench(IMG_DIR, POSE_FILE, OUT_DIR, start_frame=0, end_frame=400)
     tb.run()

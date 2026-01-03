@@ -3,6 +3,7 @@ import os
 import shutil
 
 import cv2
+import matplotlib.pyplot as plt
 import numpy as np
 
 from vision_odometry_pipeline.steps.replenishment_step import ReplenishmentStep
@@ -155,7 +156,9 @@ class ReplenishmentTestbench:
             cv2.putText(vis, l4, (10, 74), font, 0.5, (0, 255, 255), 1)
 
             # Save
-            out_name = os.path.join(self.output_folder, f"result_{f_idx:04d}.png")
+            out_name = os.path.join(
+                self.output_folder, f"replenishment_{f_idx:04d}.png"
+            )
             cv2.imwrite(out_name, vis)
 
             # Console Log
@@ -164,7 +167,47 @@ class ReplenishmentTestbench:
                 end="\r",
             )
 
-        # --- SUMMARY ---
+        self.plot_results(history_counts, history_eigen, history_fill, history_std)
+        self.print_summary(history_counts, history_eigen, history_fill, history_std)
+
+    def plot_results(self, counts, eigen, fill, std):
+        """Plots feature replenishment statistics."""
+        frames = range(len(counts))
+        _, axs = plt.subplots(2, 2, figsize=(14, 10))
+
+        # 1. Feature Count
+        axs[0, 0].plot(frames, counts, color="blue")
+        axs[0, 0].set_title("Feature Count")
+        axs[0, 0].set_ylabel("Count")
+        axs[0, 0].grid(True, alpha=0.5)
+
+        # 2. Avg Eigen Value
+        axs[0, 1].plot(frames, eigen, color="orange")
+        axs[0, 1].set_title("Average Feature Response (MinEigenVal)")
+        axs[0, 1].set_ylabel("Score")
+        axs[0, 1].grid(True, alpha=0.5)
+
+        # 3. Fill Rate
+        fill_pct = [f * 100 for f in fill]
+        axs[1, 0].plot(frames, fill_pct, color="green")
+        axs[1, 0].set_title("Grid Fill Rate (%)")
+        axs[1, 0].set_ylabel("Fill (%)")
+        axs[1, 0].set_ylim(0, 100)
+        axs[1, 0].grid(True, alpha=0.5)
+
+        # 4. Std Dev
+        axs[1, 1].plot(frames, std, color="red")
+        axs[1, 1].set_title("Distribution StdDev (Lower is Better)")
+        axs[1, 1].set_ylabel("StdDev")
+        axs[1, 1].grid(True, alpha=0.5)
+
+        plt.tight_layout()
+        out_path = os.path.join(self.output_folder, "A_replenishment_metrics.png")
+        plt.savefig(out_path)
+        print(f"Plot saved to {out_path}")
+        plt.close()
+
+    def print_summary(self, history_counts, history_eigen, history_fill, history_std):
         print("\n" + "=" * 65)
         print(f"{'PERFORMANCE SUMMARY':^65}")
         print("=" * 65)

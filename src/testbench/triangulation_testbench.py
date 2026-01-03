@@ -3,6 +3,7 @@ import os
 import shutil
 
 import cv2
+import matplotlib.pyplot as plt
 import numpy as np
 
 from vision_odometry_pipeline.steps.key_point_tracker import KeypointTrackingStep
@@ -234,7 +235,40 @@ class TriangulationTestbench:
                 end="\r",
             )
 
+        self.plot_results(hist_new_lm, hist_repr_err, hist_avg_depth)
         self.print_summary(hist_new_lm, hist_repr_err, hist_avg_depth)
+
+    def plot_results(self, new_lm, repr_err, depths):
+        """Plots triangulation metrics over frames."""
+        frames = range(len(new_lm))
+        _, axs = plt.subplots(3, 1, figsize=(10, 12), sharex=True)
+
+        # New Landmarks
+        axs[0].plot(frames, new_lm, color="blue", label="New Landmarks")
+        axs[0].set_title("New Landmarks per Frame")
+        axs[0].set_ylabel("Count")
+        axs[0].grid(True, linestyle="--", alpha=0.6)
+
+        # Reprojection Error
+        axs[1].plot(frames, repr_err, color="red", label="Reprojection Error")
+        axs[1].axhline(y=1.0, color="green", linestyle="--", label="1.0 px Threshold")
+        axs[1].set_title("Reprojection Error (px)")
+        axs[1].set_ylabel("Error (px)")
+        axs[1].legend()
+        axs[1].grid(True, linestyle="--", alpha=0.6)
+
+        # Average Depth
+        axs[2].plot(frames, depths, color="purple", label="Avg Depth")
+        axs[2].set_title("Average Landmark Depth (m)")
+        axs[2].set_ylabel("Depth (m)")
+        axs[2].set_xlabel("Frame Index")
+        axs[2].grid(True, linestyle="--", alpha=0.6)
+
+        plt.tight_layout()
+        out_path = os.path.join(self.output_folder, "A_triangulation_metrics.png")
+        plt.savefig(out_path)
+        print(f"Plot saved to {out_path}")
+        plt.close()
 
     def print_summary(self, new_lm, repr_err, depths):
         print("\n" + "=" * 65)
