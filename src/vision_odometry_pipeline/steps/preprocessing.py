@@ -16,7 +16,6 @@ class ImagePreprocessingStep(VoStep):
     def process(
         self, img: np.ndarray, debug: bool
     ) -> tuple[np.ndarray, np.ndarray | None]:
-
         gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY) if img.ndim == 3 else img
         gray_undistorted = cv2.remap(
             gray, self.map_x, self.map_y, interpolation=cv2.INTER_LINEAR

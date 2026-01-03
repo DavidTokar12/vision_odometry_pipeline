@@ -84,11 +84,15 @@ class KeypointTrackingStep(VoStep):
         # Convert boolean masks to indices to easily map RANSAC results back
         idx_p_good = np.flatnonzero(st_p)
         idx_c_good = np.flatnonzero(st_c)
-        
+
         # Prepare data for RANSAC (Prev -> Curr)
-        pts_prev_all = np.concatenate((p0[idx_p_good], c0[idx_c_good]), axis=0).astype(np.float32, copy=False)
-        pts_curr_all = np.concatenate((p1[idx_p_good], c1[idx_c_good]), axis=0).astype(np.float32, copy=False)
-        
+        pts_prev_all = np.concatenate((p0[idx_p_good], c0[idx_c_good]), axis=0).astype(
+            np.float32, copy=False
+        )
+        pts_curr_all = np.concatenate((p1[idx_p_good], c1[idx_c_good]), axis=0).astype(
+            np.float32, copy=False
+        )
+
         # Run 8-Point RANSAC
         if len(pts_prev_all) >= 8:
             _, ransac_mask = cv2.findFundamentalMat(
