@@ -24,7 +24,7 @@ class PipelineInitialization(VoStep):
         img_curr = state.image_buffer.curr
 
         # --- Tracking ---
-        p0 = state.C.astype(np.float32)
+        p0 = state.C
         p1, st = self._track_features_bidirectional(img_prev, img_curr, p0)
         p1 = p1.reshape(-1, 2)
 
@@ -46,7 +46,7 @@ class PipelineInitialization(VoStep):
         h, w = img_curr.shape
         grid_rows = self.config.grid_rows
         grid_cols = self.config.grid_cols
-        grid_counts = np.zeros((grid_rows, grid_cols), dtype=int)
+        grid_counts = np.zeros((grid_rows, grid_cols), dtype=np.int32)
 
         # Vectorized bucket index calculation
         # Normalized coordinates 0.0 to 1.0
@@ -54,17 +54,16 @@ class PipelineInitialization(VoStep):
         norm_y = new_C[:, 1] / h
 
         # Map to grid indices (0 to 9)
-        idx_x = np.floor(norm_x * grid_cols).astype(int)
-        idx_y = np.floor(norm_y * grid_rows).astype(int)
+        idx_x = np.floor(norm_x * grid_cols).astype(np.int32)
+        idx_y = np.floor(norm_y * grid_rows).astype(np.int32)
 
         # Clip to ensure valid indices (in case a point is slightly outside)
         idx_x = np.clip(idx_x, 0, grid_cols - 1)
         idx_y = np.clip(idx_y, 0, grid_rows - 1)
 
         # Count occupancy
-        # (This loop is fast for ~200 points)
-        for r, c in zip(idx_y, idx_x, strict=True):
-            grid_counts[r, c] += 1
+        bin_ids = idx_y * grid_cols + idx_x
+        np.add.at(grid_counts.ravel(), bin_ids, 1)
 
         occupied_cells = np.sum(grid_counts > 0)
 
@@ -83,12 +82,23 @@ class PipelineInitialization(VoStep):
 
         # Convert to normalized coordinates: (u - cx) / fx
         vec_C = np.stack(
-            [(new_C[:, 0] - cx) / fx, (new_C[:, 1] - cy) / fy, np.ones(len(new_C))],
+            [
+                (new_C[:, 0] - cx) / fx,
+                (new_C[:, 1] - cy) / fy,
+                np.ones(len(new_C), dtype=np.float32),
+            ],
             axis=1,
+            dtype=np.float32,
         )
+
         vec_F = np.stack(
-            [(new_F[:, 0] - cx) / fx, (new_F[:, 1] - cy) / fy, np.ones(len(new_F))],
+            [
+                (new_F[:, 0] - cx) / fx,
+                (new_F[:, 1] - cy) / fy,
+                np.ones(len(new_F), dtype=np.float32),
+            ],
             axis=1,
+            dtype=np.float32,
         )
 
         # Normalize to unit vectors
@@ -146,6 +156,7 @@ class PipelineInitialization(VoStep):
         # --- Pose Recovery and Cheirality check
 
         _, R, t, mask_pose = cv2.recoverPose(E, cand_F, cand_C, self.optimal_K)
+        R, t = R.astype(np.float32), t.astype(np.float32)
 
         # Scale decision
         t = t / np.linalg.norm(t)
@@ -160,7 +171,9 @@ class PipelineInitialization(VoStep):
 
         # --- Triangulation ---
 
-        M0 = self.optimal_K @ np.hstack((np.eye(3), np.zeros((3, 1))))
+        M0 = self.optimal_K @ np.hstack(
+            (np.eye(3, dtype=np.float32), np.zeros((3, 1), np.float32))
+        )
         M1 = self.optimal_K @ np.hstack((R, t))
 
         points4D = cv2.triangulatePoints(M0, M1, cand_F.T, cand_C.T)
@@ -188,7 +201,7 @@ class PipelineInitialization(VoStep):
 
             new_ids = np.arange(len(new_X), dtype=np.int64)
 
-            new_pose = np.eye(4)
+            new_pose = np.eye(4, dtype=np.float32)
             new_pose[:3, :3] = R
             new_pose[:3, 3] = t.flatten()
 
@@ -329,7 +342,9 @@ class PipelineInitialization(VoStep):
         if len(keypoints) < self.config.min_init_features:
             print("Warning: Low feature count in initialization frame")
 
-        identity_pose_flat = np.hstack((np.eye(3), np.zeros((3, 1)))).flatten()
+        identity_pose_flat = np.hstack(
+            (np.eye(3), np.zeros((3, 1))), dtype=np.float32
+        ).flatten()
         T_first_init = np.tile(identity_pose_flat, (len(keypoints), 1))
 
         return keypoints, keypoints, T_first_init
@@ -390,13 +405,13 @@ class PipelineInitialization(VoStep):
         if num_valid > self.config.min_inliers:
             print(f"[Init-GT] Success! {num_valid} landmarks initialized via GT.")
 
-            new_X = (pts_hom[:, mask_valid] / W[mask_valid]).T
+            new_X = (pts_hom[:, mask_valid] / W[mask_valid]).T.astype(np.float32)
             new_P = cand_C[mask_valid]
 
             new_ids = np.arange(len(new_X), dtype=np.int64)
 
             # Return the GT Pose (T_WC) as the initial pose state
-            new_pose = np.eye(4)
+            new_pose = np.eye(4, dtype=np.float32)
             new_pose[:3, :] = T_wc_1[:3, :]  # Use T_WC
 
             # Simply drop candidates that weren't triangulated
@@ -409,7 +424,7 @@ class PipelineInitialization(VoStep):
             # We must update their T_first to match the actual start pose T_wc_0.
             rem_T = cand_T[~mask_valid].copy()
             # Flatten T_wc_0 to shape (12,)
-            gt_start_pose_flat = T_wc_0[:3, :].flatten()
+            gt_start_pose_flat = T_wc_0[:3, :].flatten().astype(np.float32)
             # Update all remaining candidates to originate from this valid metric pose
             rem_T[:] = gt_start_pose_flat
 
@@ -425,7 +440,7 @@ class PipelineInitialization(VoStep):
                 if not line.strip():
                     continue
                 vals = [float(x) for x in line.split()]
-                poses.append(np.array(vals).reshape(3, 4))
+                poses.append(np.array(vals, dtype=np.float32).reshape(3, 4))
         return poses
 
     def _inv_pose(self, T):

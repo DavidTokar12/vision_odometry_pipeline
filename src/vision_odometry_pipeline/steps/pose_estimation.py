@@ -73,11 +73,11 @@ class PoseEstimationStep(VoStep):
             R, _ = cv2.Rodrigues(rvec)
 
             # world to camera transform
-            T_CW = np.eye(4)
+            T_CW = np.eye(4, dtype=np.float32)
             T_CW[:3, :3] = R
             T_CW[:3, 3] = tvec.flatten()
             # camera to world transform
-            T_WC = np.linalg.inv(T_CW)
+            T_WC = np.linalg.inv(T_CW).astype(np.float32, copy=False)
             new_pose = T_WC
 
             if inliers is not None:

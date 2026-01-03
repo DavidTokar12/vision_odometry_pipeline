@@ -268,13 +268,50 @@ def create_malaga_config(
     )
 
 
+def create_polibahn_up_config(
+    base_path: str,
+    output: str,
+    first_frame: int = 0,
+    last_frame: int | None = None,
+) -> DatasetConfig:
+    """Create configuration for the Polibahn Up dataset."""
+    data_path = os.path.join(base_path, "polibahn_up")
+
+    if not os.path.exists(data_path):
+        raise FileNotFoundError(f"Polibahn dataset not found: {data_path}")
+
+    k_path = os.path.join(data_path, "K.txt")
+    d_path = os.path.join(data_path, "D.txt")
+
+    K = np.loadtxt(k_path, delimiter=",") if os.path.exists(k_path) else np.eye(3)
+    D = np.loadtxt(d_path, delimiter=",") if os.path.exists(d_path) else np.zeros(5)
+
+    gt_path = os.path.join(data_path, "poses.txt")
+    ground_truth = _load_ground_truth(gt_path)
+
+    return DatasetConfig(
+        name="Polibahn_Up",
+        K=K,
+        D=D,
+        image_path_fn=lambda idx: os.path.join(
+            data_path, "images", f"img_{idx:05d}.png"
+        ),
+        first_frame=first_frame,
+        last_frame=last_frame if last_frame is not None else 462,
+        debug_output=os.path.join(output, "main_polibahn_up"),
+        ground_truth=ground_truth,
+    )
+
+
 DATASET_FACTORIES = {
     0: create_parking_config,
     1: create_kitti_config,
     2: create_malaga_config,
+    3: create_polibahn_up_config,
     "parking": create_parking_config,
     "kitti": create_kitti_config,
     "malaga": create_malaga_config,
+    "polibahn_up": create_polibahn_up_config,
 }
 
 

@@ -21,6 +21,7 @@ class VoFrameResult:
     processing_time_ms: float
     step_timings: dict[str, float]
 
+
 class VoRunnerProcess:
     """
     Runs VoRunner in a separate process with zero-copy image transfer.
@@ -192,7 +193,7 @@ def _worker_main(
                 X=state.X.copy(),
                 trajectory=runner.get_trajectory().copy(),
                 processing_time_ms=processing_time_ms,
-                step_timings=runner.get_last_timings()
+                step_timings=runner.get_last_timings(),
             )
 
             result_queue.put(result)

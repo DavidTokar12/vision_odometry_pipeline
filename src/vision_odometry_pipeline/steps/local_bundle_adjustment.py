@@ -212,7 +212,8 @@ class LocalBundleAdjustmentStep(VoStep):
             res.x, state, pose_indices, landmark_indices
         )
 
-        return new_pose, state.P, new_X, None
+        # this was float 64, will not touch the algorithm yet just change it here
+        return new_pose.astype(np.float32), state.P, new_X, None
 
     def _unpack_results(
         self,
@@ -377,7 +378,8 @@ class LocalBundleAdjustmentStep(VoStep):
 
             # 2. Rotation Part (d_Xcam / d_w = -[X_cam]_x)
             # J_rot = J_proj @ -skew(X_cam)
-            skew_X = _batched_skew_symmetric(X_cam_opt)
+            X_rot = X_cam_opt - t_vecs
+            skew_X = _batched_skew_symmetric(X_rot)
             J_rot = -np.einsum("nij,njk->nik", J_proj_opt, skew_X)  # (M, 2, 3)
 
             # Combine [J_rot, J_trans] -> (M, 2, 6)

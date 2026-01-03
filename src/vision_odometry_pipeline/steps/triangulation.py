@@ -29,6 +29,7 @@ class TriangulationStep(VoStep):
         """
         Triangulates candidates and UPDATES the full arrays (Stacking/Removal).
         """
+
         if len(state.C) == 0:
             return (
                 state.P,

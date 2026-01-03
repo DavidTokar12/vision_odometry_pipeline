@@ -1,9 +1,9 @@
 from __future__ import annotations
 
 import os
+import pickle
 import time
 
-from dataclasses import replace
 from pathlib import Path
 
 import cv2
@@ -21,6 +21,10 @@ from vision_odometry_pipeline.steps.preprocessing import ImagePreprocessingStep
 from vision_odometry_pipeline.steps.replenishment_step import ReplenishmentStep
 from vision_odometry_pipeline.steps.triangulation import TriangulationStep
 from vision_odometry_pipeline.vo_state import VoState
+
+
+np.random.seed(42)
+cv2.setRNGSeed(42)
 
 
 class VoRunner:
@@ -54,11 +58,10 @@ class VoRunner:
         """
         Ingests a single image, pushes it through the pipeline steps.
         """
-        self._state = replace(self._state, frame_id=self._frame_idx)
+        self._state.frame_id = self._frame_idx
 
         if self._state.pipline_init_stage == 0:
             # --- Find optimal parameters for undistorted images ---
-            print("Creating undistortion maps...")
             h, w = image.shape[:2]
             map_x, map_y, roi, new_K = (
                 self.pipeline_initialization.create_undistorted_maps((h, w))
@@ -73,24 +76,23 @@ class VoRunner:
             self.local_ba = LocalBundleAdjustmentStep(K=new_K)
 
             # --- Preprocess Image ---
-            self._state.image_buffer.update(image)
-            gray_img, vis_pre = self.preproc.process(self._state, self._debug)
-            self._state.image_buffer._buffer[-1] = gray_img
+            gray_img, vis_pre = self.preproc.process(image, self._debug)
+            self._state.image_buffer.update(gray_img)
 
             # --- Find initial SIFT features and update state ---
             new_C, new_F, new_T = self.pipeline_initialization.find_initial_features(
                 self._state
             )
-            self._state = replace(
-                self._state, C=new_C, F=new_F, T_first=new_T, pipline_init_stage=1
-            )
+            self._state.C = new_C
+            self._state.F = new_F
+            self._state.T_first = new_T
+            self._state.pipline_init_stage = 1
             print("Frame 0 initialized.")
 
         elif self._state.pipline_init_stage == 1:
             # --- Preprocess Image ---
-            self._state.image_buffer.update(image)
-            gray_img, vis_pre = self.preproc.process(self._state, self._debug)
-            self._state.image_buffer._buffer[-1] = gray_img
+            gray_img, vis_pre = self.preproc.process(image, self._debug)
+            self._state.image_buffer.update(gray_img)
 
             # --- Find initial pose and landmarks, update state ---
             new_C, new_F, new_T, new_X, new_ids, new_P, new_pose, avg_depth, status = (
@@ -98,21 +100,20 @@ class VoRunner:
             )
 
             if status:
-                self._state = replace(
-                    self._state,
-                    P=new_P,
-                    X=new_X,
-                    landmark_ids=new_ids,
-                    C=new_C,
-                    F=new_F,
-                    T_first=new_T,
-                    pose=new_pose,
-                    initial_avg_depth=avg_depth,
-                    pipline_init_stage=2,
-                )
+                self._state.P = new_P
+                self._state.X = new_X
+                self._state.landmark_ids = new_ids
+                self._state.C = new_C
+                self._state.F = new_F
+                self._state.T_first = new_T
+                self._state.pose = new_pose
+                self._state.initial_avg_depth = avg_depth
+                self._state.pipline_init_stage = 2
                 print(f"Pipeline initialized after {self._frame_idx} frames.")
             else:
-                self._state = replace(self._state, C=new_C, F=new_F, T_first=new_T)
+                self._state.C = new_C
+                self._state.F = new_F
+                self._state.T_first = new_T
 
         else:
             t_total_start = time.perf_counter()
@@ -124,19 +125,21 @@ class VoRunner:
                     self._debug_out, f"frame_{self._frame_idx:04d}"
                 )
                 os.makedirs(current_debug_dir, exist_ok=True)
+                Path(current_debug_dir, "vo_state.pkl").write_bytes(
+                    pickle.dumps(self._state, protocol=pickle.HIGHEST_PROTOCOL)
+                )
 
             # ---------------------------------------------------------
             # STEP 1: Image Preprocessing
             # ---------------------------------------------------------
             # Special Case: We must load the raw image into buffer first
-            self._state.image_buffer.update(image)
 
             t0 = time.perf_counter()
-            gray_img, vis_pre = self.preproc.process(self._state, self._debug)
+            gray_img, vis_pre = self.preproc.process(image, self._debug)
             self._record_timing("01_Preprocessing", t0)
 
             # Apply Result: Replace buffer content with Grayscale for tracking
-            self._state.image_buffer._buffer[-1] = gray_img
+            self._state.image_buffer.update(gray_img)
 
             self._save_debug(current_debug_dir, "01_Preprocessing", vis_pre)
 
@@ -156,15 +159,12 @@ class VoRunner:
             )
             self._record_timing("02_Tracking", t0)
 
-            self._state = replace(
-                self._state,
-                P=new_P,
-                X=new_X,
-                landmark_ids=new_ids,
-                C=new_C,
-                F=new_F,
-                T_first=new_T,
-            )
+            self._state.P = new_P
+            self._state.X = new_X
+            self._state.landmark_ids = new_ids
+            self._state.C = new_C
+            self._state.F = new_F
+            self._state.T_first = new_T
             self._save_debug(current_debug_dir, "02_Tracking", vis_track)
 
             # ---------------------------------------------------------
@@ -176,10 +176,10 @@ class VoRunner:
                 self._state, self._debug
             )
             self._record_timing("03_PoseEstimation", t0)
-
-            self._state = replace(
-                self._state, pose=new_pose, P=final_P, X=final_X, landmark_ids=final_ids
-            )
+            self._state.pose = new_pose
+            self._state.P = final_P
+            self._state.X = final_X
+            self._state.landmark_ids = final_ids
             self._save_debug(current_debug_dir, "03_PoseEstimation", vis_pose)
 
             # ---------------------------------------------------------
@@ -192,15 +192,12 @@ class VoRunner:
             )
             self._record_timing("04_Triangulation", t0)
 
-            self._state = replace(
-                self._state,
-                P=full_P,
-                X=full_X,
-                landmark_ids=full_ids,
-                C=rem_C,
-                F=rem_F,
-                T_first=rem_T,
-            )
+            self._state.P = full_P
+            self._state.X = full_X
+            self._state.landmark_ids = full_ids
+            self._state.C = rem_C
+            self._state.F = rem_F
+            self._state.T_first = rem_T
             self._save_debug(current_debug_dir, "04_Triangulation", vis_map)
 
             # ---------------------------------------------------------
@@ -212,12 +209,9 @@ class VoRunner:
             opt_pose, opt_P, opt_X, _ = self.local_ba.process(self._state, self._debug)
             self._record_timing("05_LocalBA", t0)
 
-            self._state = replace(
-                self._state,
-                pose=opt_pose,  # Update with optimized pose
-                P=opt_P,
-                X=opt_X,  # Update with optimized structure
-            )
+            self._state.pose = opt_pose  # Update with optimized pose
+            self._state.P = opt_P
+            self._state.X = opt_X  # Update with optimized structure
 
             # ---------------------------------------------------------
             # STEP 5: Replenishment (New Candidates)
@@ -229,7 +223,9 @@ class VoRunner:
             )
             self._record_timing("05_Replenishment", t0)
 
-            self._state = replace(self._state, C=full_C, F=full_F, T_first=full_T)
+            self._state.C = full_C
+            self._state.F = full_F
+            self._state.T_first = full_T
             self._save_debug(current_debug_dir, "05_Replenishment", vis_rep)
 
             # ---------------------------------------------------------
@@ -239,6 +235,60 @@ class VoRunner:
 
         self._trajectory.append(self._state.pose.copy())
         self._frame_idx += 1
+
+        assert (
+            isinstance(self._state.P, np.ndarray)
+            and self._state.P.dtype == np.float32
+            and self._state.P.ndim == 2
+            and self._state.P.shape[1] == 2
+        )
+        assert (
+            isinstance(self._state.X, np.ndarray)
+            and self._state.X.dtype == np.float32
+            and self._state.X.ndim == 2
+            and self._state.X.shape[1] == 3
+        )
+        assert (
+            isinstance(self._state.C, np.ndarray)
+            and self._state.C.dtype == np.float32
+            and self._state.C.ndim == 2
+            and self._state.C.shape[1] == 2
+        )
+        assert (
+            isinstance(self._state.F, np.ndarray)
+            and self._state.F.dtype == np.float32
+            and self._state.F.ndim == 2
+            and self._state.F.shape[1] == 2
+        )
+        assert (
+            isinstance(self._state.T_first, np.ndarray)
+            and self._state.T_first.dtype == np.float32
+            and self._state.T_first.ndim == 2
+            and self._state.T_first.shape[1] == 12
+        )
+        assert (
+            isinstance(self._state.landmark_ids, np.ndarray)
+            and self._state.landmark_ids.dtype == np.int64
+            and self._state.landmark_ids.ndim == 1
+        )
+        assert (
+            isinstance(self._state.pose, np.ndarray)
+            and self._state.pose.dtype == np.float32
+            and self._state.pose.shape == (4, 4)
+        )
+        if (
+            self._state.image_buffer.prev is not None
+            and self._state.image_buffer.curr is not None
+        ):
+            assert (
+                self._state.image_buffer.prev.dtype
+                == self._state.image_buffer.curr.dtype
+            )
+            assert (
+                self._state.image_buffer.prev.shape
+                == self._state.image_buffer.curr.shape
+            )
+            assert self._state.image_buffer.prev.ndim == 2
 
         return self._state
 
