@@ -9,9 +9,9 @@ from vision_odometry_pipeline.vo_step import VoStep
 
 
 class PipelineInitialization(VoStep):
-    def __init__(self, K, D) -> None:
+    def __init__(self, config: InitializationConfig, K, D) -> None:
         super().__init__("PipelineInitialization")
-        self.config = InitializationConfig()
+        self.config = config
         self.initial_K = K
         self.initial_D = D
         self.optimal_K = None
@@ -38,7 +38,7 @@ class PipelineInitialization(VoStep):
             return new_C, new_F, new_T, None, None, None, None, None, False
 
         # For DEBUG / CHEATMODE (TODO: Consider removing again after development)
-        if self.config.CHEATMODE:
+        if self.config.cheat_mode:
             return self._process_with_gt(state, new_C, new_F, new_T)
 
         # --- Bucketing ---

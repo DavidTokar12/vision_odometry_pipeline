@@ -9,9 +9,9 @@ from vision_odometry_pipeline.vo_step import VoStep
 
 
 class TriangulationStep(VoStep):
-    def __init__(self, K: np.ndarray):
+    def __init__(self, config: TriangulationConfig, K: np.ndarray):
         super().__init__("Triangulation")
-        self.config = TriangulationConfig()
+        self.config = config
         self.K = K
         self.max_cos_angle = np.cos(np.radians(self.config.min_angle_deg))
 

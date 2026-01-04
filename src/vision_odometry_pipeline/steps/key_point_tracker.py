@@ -9,10 +9,10 @@ from vision_odometry_pipeline.vo_step import VoStep
 
 
 class KeypointTrackingStep(VoStep):
-    def __init__(self):
+    def __init__(self, config: KeypointTrackingConfig) -> None:
         super().__init__("KeypointTracking")
 
-        self.config = KeypointTrackingConfig()
+        self.config = config
 
         self.lk_params = {
             "winSize": self.config.win_size,
