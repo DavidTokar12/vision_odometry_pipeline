@@ -91,6 +91,10 @@ class VoRunner:
         """
         self._state.frame_id = self._frame_idx
 
+        # ---------------------------------------------------------
+        # Bootstrapping: Pipeline Initialization
+        # ---------------------------------------------------------
+
         if self._state.pipline_init_stage == 0:
             # --- Find optimal parameters for undistorted images ---
             h, w = image.shape[:2]
@@ -151,6 +155,10 @@ class VoRunner:
                 self._state.C = new_C
                 self._state.F = new_F
                 self._state.T_first = new_T
+
+        # ---------------------------------------------------------
+        # CONTINUOUS OPERATION
+        # ---------------------------------------------------------
 
         else:
             t_total_start = time.perf_counter()
@@ -238,7 +246,7 @@ class VoRunner:
             self._save_debug(current_debug_dir, "04_Triangulation", vis_map)
 
             # ---------------------------------------------------------
-            # STEP 4.5: Local Bundle Adjustment (NEW)
+            # STEP 5: Local Bundle Adjustment
             # ---------------------------------------------------------
             t0 = time.perf_counter()
 
@@ -251,7 +259,7 @@ class VoRunner:
             self._state.X = opt_X  # Update with optimized structure
 
             # ---------------------------------------------------------
-            # STEP 5: Replenishment (New Candidates)
+            # STEP 6: Replenishment (New Candidates)
             # ---------------------------------------------------------
             t0 = time.perf_counter()
             # Returns: (Full C, Full F, Full T, Vis)

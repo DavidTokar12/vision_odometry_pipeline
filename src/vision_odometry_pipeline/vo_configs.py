@@ -44,8 +44,8 @@ class KeypointTrackingConfig(BaseModel):
 class InitializationConfig(BaseModel):
     """Configuration for the Bootstrapping/Initialization phase."""
 
-    cheat_mode: bool
-    debug_gt_poses_path: str
+    use_gt_init: bool
+    gt_init_poses_path: str
 
     lk_win_size: tuple[int, int]
     lk_max_level: int
@@ -106,10 +106,10 @@ class ReplenishmentConfig(BaseModel):
 
     grid_rows: int
     grid_cols: int
-    
+
     global_feature_multiplier: int
-    
-    cell_cap_multiplier: float    
+
+    cell_cap_multiplier: float
     min_feature_factor: float
 
 
@@ -195,10 +195,9 @@ class Config(BaseModel):
 
     @property
     def D(self) -> np.ndarray | None:
-        
         if self._D is None:
             return None
-        
+
         return self._D
 
     @property

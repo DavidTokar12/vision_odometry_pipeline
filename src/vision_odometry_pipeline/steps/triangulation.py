@@ -94,7 +94,7 @@ class TriangulationStep(VoStep):
             if angle_deg < self.config.min_angle_deg:
                 continue
 
-            # Cheirality (Behind camera?) and Max Depth Check
+            # Cheirality and Max Depth Check
             X_local_curr = R_CW_curr @ X + t_CW_curr.flatten()
             if (
                 X_local_curr[2] < self.config.min_depth
@@ -133,8 +133,7 @@ class TriangulationStep(VoStep):
                 dists = np.linalg.norm(vecs, axis=1)
                 current_avg_depth = np.mean(dists)
 
-                if current_avg_depth > 1e-3:  # Avoid div by zero
-                    # Rescale points relative to the camera center
+                if current_avg_depth > 1e-3:
                     # X_new = C_w + ratio * (X_old - C_w)
                     ratio = state.initial_avg_depth / current_avg_depth
                     new_X_arr = C_w + (vecs * ratio)

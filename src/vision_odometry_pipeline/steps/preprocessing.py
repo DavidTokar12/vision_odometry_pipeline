@@ -36,26 +36,17 @@ class ImagePreprocessingStep(VoStep):
             clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
             gray_undistorted = clahe.apply(gray_undistorted)
 
-            # Optional: Mild blur to reduce noise amplified by CLAHE
-            gray_undistorted = cv2.GaussianBlur(gray_undistorted, (3, 3), 0)
-
         if preproc_gamma:
-            gamma = 1.5  # Values < 1.0 brighten the image
+            gamma = 1.5
             look_up_table = np.array(
                 [((i / 255.0) ** (1.0 / gamma)) * 255 for i in np.arange(0, 256)]
             ).astype("uint8")
             gray_undistorted = cv2.LUT(gray_undistorted, look_up_table)
 
         if preproc_log:
-            # Convert to float for precision
             img_float = gray_undistorted.astype(np.float32)
-
-            # Apply Log Transform: s = c * log(1 + r)
-            # We calculate 'c' such that the maximum pixel value maps to 255
             c = 255 / np.log(1 + np.max(img_float))
             log_image = c * (np.log(img_float + 1))
-
-            # Convert back to uint8
             gray_undistorted = np.array(log_image, dtype=np.uint8)
 
         if preproc_hist:

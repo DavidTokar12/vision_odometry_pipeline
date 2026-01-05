@@ -32,7 +32,7 @@ class PoseEstimationStep(VoStep):
                 return state.pose, state.P, state.X, state.landmark_ids, vis_fail
             return state.pose, state.P, state.X, state.landmark_ids, None
 
-        # P3P RANSAC
+        # PNP RANSAC
         success, rvec, tvec, inliers = cv2.solvePnPRansac(
             state.X,  # Triangulated 3D Landmarks
             state.P,  # Tracked 2D Keypoints
@@ -41,7 +41,7 @@ class PoseEstimationStep(VoStep):
             iterationsCount=self.config.iterations_count,
             reprojectionError=self.config.repr_error,
             confidence=self.config.ransac_prob,
-            flags=self.config.pnp_flags,  # use P3P, need 4 points
+            flags=self.config.pnp_flags,
         )
 
         new_pose = state.pose.copy()
@@ -52,8 +52,6 @@ class PoseEstimationStep(VoStep):
             P_in = state.P[inlier_mask]
             X_in = state.X[inlier_mask]
 
-            # Iterative PnP uses Levenberg-Marquardt internally and is very robust
-            # when initialized with the RANSAC result.
             if len(P_in) >= 4:
                 _, rvec, tvec = cv2.solvePnP(
                     X_in,
@@ -129,7 +127,7 @@ class PoseEstimationStep(VoStep):
             residuals = (projected - P).flatten()
             return residuals
 
-        # Run Levenberg-Marquardt Optimization
+        # Levenberg-Marquardt Optimization
         res = least_squares(
             fun,
             x0,

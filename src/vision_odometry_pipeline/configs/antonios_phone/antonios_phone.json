@@ -12,8 +12,8 @@
         "ransac_iters": 1500
     },
     "initialization": {
-        "cheat_mode": false,
-        "debug_gt_poses_path": "data/parking/poses.txt",
+        "use_gt_init": false,
+        "gt_init_poses_path": "data/parking/poses.txt",
         "lk_win_size": [
             15,
             15

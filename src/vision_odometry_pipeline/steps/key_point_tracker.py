@@ -61,27 +61,9 @@ class KeypointTrackingStep(VoStep):
             c1, st_c = self._track_features_bidirectional(img_prev, img_curr, c0)
             st_c = st_c.reshape(-1)
 
-        """ (TODO: potentially remove)
-        # Filter Data (without 8-Point RANSAC) 
-        # --------------------------------
-        # Filter P and align X
-        valid_p = st_p == 1
-        new_P = p1[valid_p]
-        new_X = state.X[valid_p]
-        new_ids = state.landmark_ids[valid_p]
-
-        # Filter C and align F, T
-        valid_c = st_c == 1
-        new_C = c1[valid_c]
-        new_F = state.F[valid_c]
-        new_T = state.T_first[valid_c]
-        """
-
         # --- Filter Data (With 8-Point RANSAC) ---
-        # (TODO: potentially remove or clean up)
 
         # Gather all successfully tracked points for 8-Point RANSAC
-        # Convert boolean masks to indices to easily map RANSAC results back
         idx_p_good = np.flatnonzero(st_p)
         idx_c_good = np.flatnonzero(st_c)
 
@@ -126,7 +108,7 @@ class KeypointTrackingStep(VoStep):
         new_F = state.F[final_idx_c]
         new_T = state.T_first[final_idx_c]
 
-        # 4. Visualization
+        # Visualization
         vis = None
         if debug:
             vis = self._visualize_tracking(img_curr, p0, p1, st_p, c0, c1, st_c)

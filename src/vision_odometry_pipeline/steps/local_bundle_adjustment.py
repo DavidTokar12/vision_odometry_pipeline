@@ -43,11 +43,6 @@ def _batched_rodrigues(r_vecs: np.ndarray) -> np.ndarray:
     with np.errstate(invalid="ignore", divide="ignore"):
         k = r_vecs / theta
 
-    # Handle zero rotation vectors (theta is zero)
-    # We replace NaNs in k with 0 (or any value) because they will be zeroed out by sin/lines anyway,
-    # but strictly we should handle the identity case.
-    # A cleaner numerical approach is to compute coefficients.
-
     # K = [k]_x skew symmetric matrix
     K = np.zeros((r_vecs.shape[0], 3, 3))
     K[:, 0, 1] = -k[:, 2]
@@ -60,17 +55,12 @@ def _batched_rodrigues(r_vecs: np.ndarray) -> np.ndarray:
     # Rodrigues formula: I + sin(theta)K + (1-cos(theta))K^2
     I_matrix = np.eye(3).reshape(1, 3, 3)
 
-    # Fix NaNs for the zero-angle case (where theta=0 resulted in k=NaN)
-    # If theta is close to 0, limit tends to Identity.
-    # We apply the formula where theta > epsilon.
-
-    # Re-calculate cleanly to ensure 1000% stability
+    # Re-calculate cleanly to ensure stability
     theta = theta.reshape(-1, 1, 1)
     k_cos = 1 - np.cos(theta)
     k_sin = np.sin(theta)
 
-    # Where theta is 0, these terms result in 0 update to Identity, which is correct.
-    # However, k has NaNs. We must zero out the update terms where theta is 0.
+    # Where theta is 0, these terms result in 0 update to Identity.
     mask = theta > 1e-8
 
     term1 = mask * k_sin * K
@@ -93,10 +83,6 @@ def _batched_skew_symmetric(v: np.ndarray) -> np.ndarray:
     # [z, 0, -x]
     # [-y, x, 0]
 
-    # We construct the 3x3 manually
-    # S[:, 0, 1] = -v[:, 2] etc...
-    # Stacking is cleaner for numpy
-
     row0 = np.stack([z, -v[:, 2], v[:, 1]], axis=1)  # (N, 3)
     row1 = np.stack([v[:, 2], z, -v[:, 0]], axis=1)
     row2 = np.stack([-v[:, 1], v[:, 0], z], axis=1)
@@ -110,13 +96,13 @@ class LocalBundleAdjustmentStep(VoStep):
         self.K = K
         self.config = config
 
-        # The sliding window buffer (deque efficiently handles pushes/pops)
+        # The sliding window buffer
         self._window: deque[WindowFrame] = deque(maxlen=self.config.window_size)
 
         # Cache for optimized poses: frame_id -> T_WC (4x4)
-        # This acts as the "marginalization" prior. When a frame moves from
-        # position 't' to 't-1' in the window, we want to remember its
-        # refined pose from the previous optimization, not its initial PnP guess.
+
+        # We want to remember the frame's refined pose
+        # from the previous optimization, not its initial PnP guess.
         self._optimized_poses: dict[int, np.ndarray] = {}
 
     def process(
@@ -131,31 +117,29 @@ class LocalBundleAdjustmentStep(VoStep):
         if not self.config.enable_ba:
             return state.pose, state.P, state.X, None
 
-        # 1. Manage Sliding Window
         self._update_window(state)
 
         # Minimum window size check (need at least 3 frames for meaningful BA)
         if len(self._window) < 3:
             return state.pose, state.P, state.X, None
 
-        # 2. Filtering & Association
+        # Filtering & Association
         # valid_obs: Dict[landmark_id, List[(frame_idx, keypoint_uv)]]
         # valid_3d:  Dict[landmark_id, Point_XYZ]
         valid_obs, valid_3d = self._prepare_optimization_data(state)
 
-        # If not enough constraints, skip optimization
         if len(valid_3d) < 10:
             return state.pose, state.P, state.X, None
 
-        # A. Pack Parameters
+        # Pack Parameters
         x0, pose_indices, landmark_indices = self._pack_parameters(valid_obs, valid_3d)
 
-        # C. Pre-compute Flat Arrays
+        # Pre-compute Flat Arrays
         (obs_u, obs_v, pt_x_indices, pose_x_indices, is_optimized_mask) = (
             self._flatten_data_for_solver(valid_obs, pose_indices, landmark_indices)
         )
 
-        # D. Run Optimization (Cached)
+        # Run Optimization (Cached)
         anchor_frame = self._window[0]
         anchor_pose = self._optimized_poses.get(
             anchor_frame.frame_id, anchor_frame.pose
@@ -197,7 +181,7 @@ class LocalBundleAdjustmentStep(VoStep):
         # Execute
         res = least_squares(
             fun=fun_wrapper,
-            jac=jac_wrapper,  # <--- Pass the analytical Jacobian wrapper
+            jac=jac_wrapper,
             x0=x0,
             verbose=0,
             x_scale="jac",
@@ -207,12 +191,11 @@ class LocalBundleAdjustmentStep(VoStep):
             loss=self.config.loss_function,
             f_scale=self.config.f_scale,
         )
-        # D. Unpack and Update State
+        # Unpack and Update State
         new_pose, new_X = self._unpack_results(
             res.x, state, pose_indices, landmark_indices
         )
 
-        # this was float 64, will not touch the algorithm yet just change it here
         return new_pose.astype(np.float32), state.P, new_X, None
 
     def _unpack_results(
@@ -226,10 +209,8 @@ class LocalBundleAdjustmentStep(VoStep):
         Step 5b: Unpack optimized parameters back into the State and History.
         """
 
-        # 1. Update Optimized Poses in History Cache
-        # (This ensures the next window starts with better guesses)
+        # Update Optimized Poses in History Cache
         for frame_idx, start_idx in pose_indices.items():
-            # Get the frame ID from the window index
             frame_id = self._window[frame_idx].frame_id
 
             # Extract Vector
@@ -250,31 +231,26 @@ class LocalBundleAdjustmentStep(VoStep):
 
             self._optimized_poses[frame_id] = T_WC
 
-        # 2. Get the Optimized Pose for the CURRENT frame
-        # The current frame is always the last one in the window
+        # Get the Optimized Pose for the CURRENT frame
         curr_win_idx = len(self._window) - 1
 
         if curr_win_idx in pose_indices:
-            # We have an optimized version
             curr_frame_id = self._window[curr_win_idx].frame_id
             new_pose = self._optimized_poses[curr_frame_id]
         else:
-            # Fallback (shouldn't happen if logic is correct)
+            # Fallback
             new_pose = state.pose
 
-        # 3. Update Landmarks (state.X)
+        # Update Landmarks (state.X)
         new_X = state.X.copy()
 
         # Map: Landmark ID -> Index in state.X array
-        # We need this lookup to know WHICH row of new_X to update
         id_to_idx = {lid: i for i, lid in enumerate(state.landmark_ids)}
 
         for lid, start_idx in landmark_indices.items():
             if lid in id_to_idx:
-                # Retrieve optimized 3D point
-                pt_opt = x_opt[start_idx : start_idx + 3]
-
                 # Update the global map at the correct index
+                pt_opt = x_opt[start_idx : start_idx + 3]
                 row_idx = id_to_idx[lid]
                 new_X[row_idx] = pt_opt
 
@@ -293,7 +269,6 @@ class LocalBundleAdjustmentStep(VoStep):
         """
         Computes Residuals AND Jacobian simultaneously to reuse projection math.
         """
-        # --- 1. SETUP & RECOVER STATE (Identical to Residuals) ---
         fx, fy = self.K[0, 0], self.K[1, 1]
         cx, cy = self.K[0, 2], self.K[1, 2]
         N = len(obs_u)
@@ -325,7 +300,6 @@ class LocalBundleAdjustmentStep(VoStep):
             R_batch[is_optimized_mask] = R_opt
             t_batch[is_optimized_mask] = t_vecs
 
-        # --- 2. PROJECT (Shared Computation) ---
         # X_cam = R * X_w + t
         X_cam = np.einsum("nij,nj->ni", R_batch, points_3d) + t_batch  # (N, 3)
 
@@ -345,9 +319,8 @@ class LocalBundleAdjustmentStep(VoStep):
         # Heavy penalty for invalid depth
         residuals[np.repeat(~valid_depth, 2)] = 100.0
 
-        # --- 3. ANALYTICAL JACOBIAN ---
-
-        # A. Projective Derivative (d_Projection / d_Xcam)
+        # Analytical jacobion:
+        # Projective Derivative (d_Projection / d_Xcam)
         # J_proj is (N, 2, 3)
         # [ fx/z   0   -fx*x/z^2 ]
         # [  0    fy/z -fy*y/z^2 ]
@@ -358,25 +331,24 @@ class LocalBundleAdjustmentStep(VoStep):
         J_proj[:, 1, 1] = fy * inv_z
         J_proj[:, 1, 2] = -fy * X_cam[:, 1] * inv_z2
 
-        # B. Landmark Derivative (d_Residual / d_PointWorld)
+        # Landmark Derivative (d_Residual / d_PointWorld)
         # Chain Rule: J_point = J_proj @ R_cw
         # (N, 2, 3) @ (N, 3, 3) -> (N, 2, 3)
         J_point = np.einsum("nij,njk->nik", J_proj, R_batch)
 
-        # C. Pose Derivative (d_Residual / d_Pose)
+        # Pose Derivative (d_Residual / d_Pose)
         # Only calculated for optimized frames
         # We need (M, 2, 6) where M is count of is_optimized_mask
 
         if np.any(is_optimized_mask):
-            # Subset relevant matrices
             J_proj_opt = J_proj[is_optimized_mask]  # (M, 2, 3)
             X_cam_opt = X_cam[is_optimized_mask]  # (M, 3)
 
-            # 1. Translation Part (d_Xcam / d_t = Identity)
+            # Translation Part (d_Xcam / d_t = Identity)
             # J_trans = J_proj * I = J_proj
             J_trans = J_proj_opt  # (M, 2, 3)
 
-            # 2. Rotation Part (d_Xcam / d_w = -[X_cam]_x)
+            # Rotation Part (d_Xcam / d_w = -[X_cam]_x)
             # J_rot = J_proj @ -skew(X_cam)
             X_rot = X_cam_opt - t_vecs
             skew_X = _batched_skew_symmetric(X_rot)
@@ -385,28 +357,21 @@ class LocalBundleAdjustmentStep(VoStep):
             # Combine [J_rot, J_trans] -> (M, 2, 6)
             J_pose = np.concatenate([J_rot, J_trans], axis=2)
 
-        # --- 4. CONSTRUCT SPARSE MATRIX ---
-        # We build the COO matrix arrays
-
+        # Sparse Matrix:
         # Row Indices: 0, 0, 0... 1, 1, 1...
         # Each observation i has 2 rows: 2*i, 2*i+1
         obs_indices = np.arange(N)
         rows_u = obs_indices * 2
         rows_v = obs_indices * 2 + 1
 
-        # --- Fill Point Derivatives ---
-        # J_point is (N, 2, 3). Flattening:
-        # data order: [Pt0_u_x, Pt0_u_y, Pt0_u_z, Pt0_v_x, ... ]
+        # Data order: [Pt0_u_x, Pt0_u_y, Pt0_u_z, Pt0_v_x, ... ]
         data_pt = J_point.reshape(N * 6)
 
-        # Col Indices for Points
-        # pt_x_indices is start index. We need [idx, idx+1, idx+2]
-        # Repeat rows for 3 columns
+        # pt_x_indices is start index. Need [idx, idx+1, idx+2]
         rows_pt = np.repeat(np.stack([rows_u, rows_v], axis=1), 3, axis=1).flatten()
         cols_pt = pt_x_indices[:, None] + np.arange(3)[None, :]  # (N, 3)
         cols_pt = np.repeat(cols_pt, 2, axis=0).flatten()  # Repeat for u and v
 
-        # --- Fill Pose Derivatives ---
         # Only for optimized frames
         if np.any(is_optimized_mask):
             M = np.sum(is_optimized_mask)
@@ -424,7 +389,6 @@ class LocalBundleAdjustmentStep(VoStep):
             cols_pose = opt_pose_start[:, None] + np.arange(6)[None, :]  # (M, 6)
             cols_pose = np.repeat(cols_pose, 2, axis=0).flatten()
 
-            # Concatenate All
             all_data = np.concatenate([data_pt, data_pose])
             all_rows = np.concatenate([rows_pt, rows_pose])
             all_cols = np.concatenate([cols_pt, cols_pose])
@@ -495,15 +459,9 @@ class LocalBundleAdjustmentStep(VoStep):
         landmark_indices = {}  # Map: landmark_id -> start_index_in_x0
         current_idx = 0
 
-        # --- A. Pack Poses (Skip Frame 0) ---
         for i in range(1, len(self._window)):
             frame = self._window[i]
-
-            # --- FIX: Use the latest optimized pose if available ---
-            # This ensures we start the solver from the best known state,
-            # not the noisy initial PnP state.
             T_WC = self._optimized_poses.get(frame.frame_id, frame.pose)
-            # -------------------------------------------------------
 
             # Convert T_WC (Pose) -> T_CW (Extrinsics)
             # T_CW = T_WC^-1
@@ -524,7 +482,6 @@ class LocalBundleAdjustmentStep(VoStep):
             pose_indices[i] = current_idx
             current_idx += 6
 
-        # --- B. Pack Landmarks ---
         # Sort IDs to ensure deterministic ordering in the vector
         sorted_lids = sorted(valid_3d_points.keys())
 
@@ -546,12 +503,10 @@ class LocalBundleAdjustmentStep(VoStep):
         1. Landmark must be currently active (exist in state.X).
         2. Landmark must be observed in at least 2 frames within the window.
         """
-        # A. Create Lookup for Current 3D Positions (ID -> XYZ)
-        # We only optimize landmarks that are currently tracked (in state.X).
-        # Lost landmarks are ignored as we don't store their 3D positions in history.
+        # Create Lookup for Current 3D Positions (ID -> XYZ)
         curr_map_3d = curr_map_3d = dict(zip(state.landmark_ids, state.X, strict=True))
 
-        # B. Collect Observations across the Window
+        # BCollect Observations across the Window
         # Map: landmark_id -> list of (frame_index_in_window, (u, v))
         observations = defaultdict(list)
 
@@ -559,11 +514,9 @@ class LocalBundleAdjustmentStep(VoStep):
             # Iterate through all keypoints in this frame snapshot
             # frame.P and frame.landmark_ids are aligned arrays
             for i, lid in enumerate(frame.landmark_ids):
-                # Optimization: Only collect if it's a known active landmark
                 if lid in curr_map_3d:
                     observations[lid].append((frame_idx, frame.P[i]))
 
-        # C. Filter: Keep only landmarks with >= 2 observations (Parallax requirement)
         valid_observations = {}
         valid_3d_points = {}
 
@@ -578,13 +531,8 @@ class LocalBundleAdjustmentStep(VoStep):
         """
         Ingests the current state into the sliding window.
         """
-        # Check if we have a better (optimized) estimate for the current frame
-        # (e.g., if we were doing loop closure), otherwise use the current state pose.
         current_pose = self._optimized_poses.get(state.frame_id, state.pose.copy())
 
-        # Create Snapshot
-        # Critical: We must .copy() numpy arrays because the pipeline reuses
-        # buffers or replaces them in future steps.
         frame_snapshot = WindowFrame(
             frame_id=state.frame_id,
             pose=current_pose,
@@ -592,14 +540,9 @@ class LocalBundleAdjustmentStep(VoStep):
             landmark_ids=state.landmark_ids.copy(),
         )
 
-        # Handle Cleanup BEFORE appending (because maxlen will auto-pop)
         if len(self._window) == self.config.window_size:
-            # The oldest frame (index 0) is about to fall off the edge
             removed_frame = self._window[0]
-
-            # Remove from optimization cache to prevent memory leaks
             if removed_frame.frame_id in self._optimized_poses:
                 del self._optimized_poses[removed_frame.frame_id]
 
-        # Add to window (auto-pops oldest if full)
         self._window.append(frame_snapshot)

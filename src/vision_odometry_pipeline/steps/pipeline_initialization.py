@@ -16,7 +16,7 @@ class PipelineInitialization(VoStep):
         self.initial_D = D
         self.optimal_K = None
 
-        # For DEBUG / CHEATMODE (TODO: Consider removing again after development)
+        # For debug using the use_gt_init option
         self._cached_gt_poses = None
 
     def process(self, state: VoState, debug: bool):
@@ -24,6 +24,7 @@ class PipelineInitialization(VoStep):
         img_curr = state.image_buffer.curr
 
         # --- Tracking ---
+
         p0 = state.C
         p1, st = self._track_features_bidirectional(img_prev, img_curr, p0)
         p1 = p1.reshape(-1, 2)
@@ -37,8 +38,8 @@ class PipelineInitialization(VoStep):
         if len(new_C) < self.config.min_inliers:
             return new_C, new_F, new_T, None, None, None, None, None, False
 
-        # For DEBUG / CHEATMODE (TODO: Consider removing again after development)
-        if self.config.cheat_mode:
+        # For debug using the use_gt_init option
+        if self.config.use_gt_init:
             return self._process_with_gt(state, new_C, new_F, new_T)
 
         # --- Bucketing ---
@@ -106,7 +107,6 @@ class PipelineInitialization(VoStep):
         vec_F /= np.linalg.norm(vec_F, axis=1, keepdims=True)
 
         # Compute angle (Dot Product)
-        # Clip to [-1, 1] to avoid NaN errors from floating point precision
         cos_angles = np.clip(np.sum(vec_C * vec_F, axis=1), -1.0, 1.0)
         angles_deg = np.degrees(np.arccos(cos_angles))
 
@@ -239,20 +239,16 @@ class PipelineInitialization(VoStep):
 
         if self.initial_D is None or np.all(np.abs(self.initial_D) < 1e-5):
             print("[Init] Rectified image detected (D~0). Forcing Original K.")
-
-            # 1. Force Optimal K to be identical to Original K
             self.optimal_K = self.initial_K.copy()
 
-            # 2. Update internal params
+            # Update internal params
             self.fx, self.fy = self.optimal_K[0, 0], self.optimal_K[1, 1]
             self.cx, self.cy = self.optimal_K[0, 2], self.optimal_K[1, 2]
 
-            # 3. Create Identity Maps (No remapping/interpolation)
+            # Create Identity Maps (No remapping/interpolation)
             map_x, map_y = np.meshgrid(np.arange(w), np.arange(h))
             map_x = map_x.astype(np.float32)
             map_y = map_y.astype(np.float32)
-
-            # ROI is the full image
             roi = (0, 0, w, h)
 
             return map_x, map_y, roi, self.optimal_K
@@ -349,17 +345,15 @@ class PipelineInitialization(VoStep):
 
         return keypoints, keypoints, T_first_init
 
-    # --- DEBUG / CHEATMODE methods (TODO: Consider removing after development) ---
-
+    # For debug using the use_gt_init option
     def _process_with_gt(self, state, cand_C, cand_F, cand_T):
         """Hijacked logic using Ground Truth."""
         if self._cached_gt_poses is None:
             self._cached_gt_poses = self._load_poses(self.config.DEBUG_GT_POSES_PATH)
 
-        # 1. Get Poses for Frame 0 (Start) and Current Frame
+        # Get Poses for Frame 0 (Start) and Current Frame
         # Assuming init started at frame 0. If your buffer started later, adjust index.
 
-        # FIX: Use state.frame_id - 1 instead of hardcoded 0 to support starting later in the sequence
         prev_idx = 0
         curr_idx = 1
 
@@ -376,17 +370,17 @@ class PipelineInitialization(VoStep):
 
         print(f"[Init-GT] Cheating with GT Poses for Frame {prev_idx} -> {curr_idx}")
 
-        # 2. Invert to T_CW (World-to-Camera) for Projection Matrices
+        # Invert to T_CW (World-to-Camera) for Projection Matrices
         T_cw_0 = self._inv_pose(T_wc_0)
         T_cw_1 = self._inv_pose(T_wc_1)
 
         P0 = self.optimal_K @ T_cw_0[:3, :]
         P1 = self.optimal_K @ T_cw_1[:3, :]
 
-        # 3. Triangulate
+        # Triangulate
         pts4D = cv2.triangulatePoints(P0, P1, cand_F.T, cand_C.T)
 
-        # 4. Filter
+        # Filter
         pts_hom = pts4D[:3]
         W = pts4D[3]
         mask_valid = np.abs(W) > 1e-4
@@ -413,19 +407,11 @@ class PipelineInitialization(VoStep):
             # Return the GT Pose (T_WC) as the initial pose state
             new_pose = np.eye(4, dtype=np.float32)
             new_pose[:3, :] = T_wc_1[:3, :]  # Use T_WC
-
-            # Simply drop candidates that weren't triangulated
-            # (Or return them in rem_C if you want to keep tracking them)
             rem_C = cand_C[~mask_valid]
             rem_F = cand_F[~mask_valid]
-
-            # FIX: The remaining candidates were initialized with T_first=Identity.
-            # But we are now locked into the Absolute GT Frame.
-            # We must update their T_first to match the actual start pose T_wc_0.
             rem_T = cand_T[~mask_valid].copy()
-            # Flatten T_wc_0 to shape (12,)
+
             gt_start_pose_flat = T_wc_0[:3, :].flatten().astype(np.float32)
-            # Update all remaining candidates to originate from this valid metric pose
             rem_T[:] = gt_start_pose_flat
 
             return rem_C, rem_F, rem_T, new_X, new_ids, new_P, new_pose, 1, True

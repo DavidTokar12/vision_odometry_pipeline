@@ -36,7 +36,7 @@ class ReplenishmentStep(VoStep):
         dx = w // n_cols
         n_bins = n_rows * n_cols
 
-        # Define Caps: Allow 1.5x overflow to prioritize quality over strict uniformity
+        # Define Caps
         avg_features_per_cell = self.config.max_features / n_bins
         cap_per_cell = int(avg_features_per_cell * self.config.cell_cap_multiplier)
 
@@ -90,12 +90,11 @@ class ReplenishmentStep(VoStep):
         r_idx = np.clip(r_idx, 0, n_rows - 1)
         cand_bins = r_idx * n_cols + c_idx  # Vector holding bin IDs for every candidate
 
-        # Sort by bin ID (Stable sort preserves quality order within bins)
+        # Sort by bin ID
         sort_idx = np.argsort(cand_bins, kind="stable")  # idx of cand's grouped by bin
         sorted_bins = cand_bins[sort_idx]  # candidates grouped by bin
 
         # Determine Rank within Bin
-        # Find indices where the bin ID changes
         unique_bins, run_starts = np.unique(sorted_bins, return_index=True)
         ranks = np.zeros(len(candidates), dtype=int)
 
@@ -132,7 +131,7 @@ class ReplenishmentStep(VoStep):
             full_F = state.F
             full_T = state.T_first
 
-        # 4. Visualization
+        # Visualization
         vis = None
         if debug:
             vis = self._visualize_new_features(curr_img, mask, keypoints)
