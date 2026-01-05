@@ -68,9 +68,7 @@ class ReplenishmentStep(VoStep):
         candidates = cv2.goodFeaturesToTrack(
             curr_img,
             mask=mask,
-            maxCorners=int(
-                self.config.max_features * self.config.global_feature_multiplier
-            ),
+            maxCorners=self.config.max_features * self.config.global_feature_multiplier,
             qualityLevel=self.config.quality_level,
             minDistance=self.config.min_dist,
             blockSize=self.config.block_size,

@@ -59,7 +59,7 @@ class VoRunnerProcess:
 
         self._config = {
             "K": config.K.copy(),
-            "D": config.D.copy(),
+            "D": config.D.copy() if config.D is not None else None,
             "image_shape": image_shape,
             "image_dtype": self.image_dtype.str,
             "initial_frame": initial_frame,
@@ -162,10 +162,27 @@ def _worker_main(
     result_queue: mp.Queue,
 ) -> None:
     """Worker process entry point."""
+    
+    import os
+    os.environ["PYTHONHASHSEED"] = "0"
+    os.environ["OMP_NUM_THREADS"] = "1"
+    os.environ["OPENBLAS_NUM_THREADS"] = "1"
+    os.environ["MKL_NUM_THREADS"] = "1"
+    
+    import random
+    random.seed(42)
+    
+    import numpy as np
+    np.random.seed(42)
+    
+    import cv2
+    cv2.setRNGSeed(42)
+    cv2.setNumThreads(1)
+    
     from multiprocessing import shared_memory
 
     from vision_odometry_pipeline.vo_runner import VoRunner
-
+    
     shm_buffers = [
         shared_memory.SharedMemory(name=name) for name in config["shm_names"]
     ]

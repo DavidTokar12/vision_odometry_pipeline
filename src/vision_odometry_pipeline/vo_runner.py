@@ -51,6 +51,16 @@ class VoRunner:
         """
         The Orchestrator of the VO Pipeline.
         """
+        print("Recieved config: " )
+        print(keypoint_tracking_config)
+        print(initialization_config)
+        print(pose_estimation_config)
+        print(replenishment_config)
+        print(triangulation_config)
+        print(local_bundle_adjustment_config)
+        print("K:\n", K)
+        print("D:\n", D)
+        
         self._debug = debug
         self._debug_out = debug_output
 

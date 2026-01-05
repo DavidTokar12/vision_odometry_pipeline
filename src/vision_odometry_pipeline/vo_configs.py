@@ -106,9 +106,10 @@ class ReplenishmentConfig(BaseModel):
 
     grid_rows: int
     grid_cols: int
-
-    cell_cap_multiplier: float
-    global_feature_multiplier: float
+    
+    global_feature_multiplier: int
+    
+    cell_cap_multiplier: float    
     min_feature_factor: float
 
 
@@ -193,9 +194,11 @@ class Config(BaseModel):
         return self._K
 
     @property
-    def D(self) -> np.ndarray:
+    def D(self) -> np.ndarray | None:
+        
         if self._D is None:
-            return np.zeros(5)
+            return None
+        
         return self._D
 
     @property
@@ -287,7 +290,7 @@ def load_config(
     if config._K is None:
         raise FileNotFoundError(f"Camera matrix K.txt not found in {config_dir}")
 
-    config._D = _load_matrix(d_path, default=np.zeros(5))
+    config._D = _load_matrix(d_path)
 
     if dataset.ground_truth_path:
         gt_path = os.path.join(dataset.data_path, dataset.ground_truth_path)
