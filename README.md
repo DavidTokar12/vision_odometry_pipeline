@@ -2,7 +2,12 @@
 
 ## Overview
 
-A monocular visual odometry pipeline implementing two-view initialization, KLT optical flow tracking, RANSAC-PnP pose estimation, landmark triangulation, and local bundle adjustment. Achieves 15-20 FPS on standard datasets (KITTI, Malaga, Parking) and ucstom recordings. Developed for the Vision Algorithms for Mobile Robotics course at UZH, taught by Prof. Davide Scaramuzza.
+A monocular visual odometry pipeline implementing two-view initialization, KLT optical flow tracking, RANSAC-PnP pose estimation, landmark triangulation, and local bundle adjustment. Achieves 15-20 FPS on standard datasets (KITTI, Malaga, Parking) and custom recordings. Developed for the Vision Algorithms for Mobile Robotics course at UZH, taught by Prof. Dr. Davide Scaramuzza.
+
+## Performance
+
+Screencasts of the pipeline in action can be found on [YouTube](https://www.youtube.com/playlist?list=PL-waHff4z-BM604fTs38r3McEt11LEM0O).
+For detailed explanations and in-depth analysis of the performance including hardware specifications, please refer to the project [report](Report.pdf).
 
 ## Setup Instructions
 
@@ -26,9 +31,9 @@ The development environment will be ready once the container is open.
 
 ### Dataset Setup
 
-1. Download the compressed dataset archive from the [course website](https://rpg.ifi.uzh.ch/teaching.html#VAMR)
-2. Create a `data/` directory in the project root
-3. Extract the dataset archive directly into `data/`. Keep the default folder structure from the archive as-is — the dataloader expects this structure.
+1. Download the compressed dataset archive from the [course website](https://rpg.ifi.uzh.ch/teaching.html#VAMR) and from [here](https://u.ethz.ch/0bMXU).
+2. Create a `data/` directory in the project root.
+3. Extract the dataset archive directly into `data/`. Keep the default folder structure from the archive unchanged.
 
 Your directory should look like:
 ```
@@ -36,7 +41,9 @@ vision_odometry_pipeline/
 ├── data/
 │   ├── parking/
 │   ├── kitti/
-│   └── malaga-urban-dataset-extract-07/
+│   ├── malaga-urban-dataset-extract-07/
+│   ├── polibahn_down/
+│   └── sonneggstrasse/
 ├── src/
 └── ...
 ```
@@ -50,16 +57,16 @@ uv run python ./src/vision_odometry_pipeline/main.py -d kitti
 
 ### Command Line Arguments
 
-| Argument | Short | Default | Description |
-|----------|-------|---------|-------------|
-| `--dataset` | `-d` | `parking` | Dataset to process. Choices: `parking`, `kitti`, `malaga`, `polibahn`, `sonneggstrasse` |
-| `--first-frame` | `-f` | `0` | First frame to process |
-| `--last-frame` | `-l` | `None` | Last frame to process (uses dataset default if not specified) |
-| `--output` | `-o` | `/workspaces/.../debug_output` | Output directory base path |
-| `--data-path` | `-dp` | `/workspaces/.../data` | Base path to dataset folders |
-| `--config-path` | `-cp` | `/workspaces/.../configs` | Base path to config JSON files |
-| `--ground-truth` | `-g` | `False` | Plot ground truth trajectory |
-| `--debug` | | `False` | Enable debug mode (saves intermediate outputs) |
+| Argument         | Short | Default                        | Description                                                                             |
+| ---------------- | ----- | ------------------------------ | --------------------------------------------------------------------------------------- |
+| `--dataset`      | `-d`  | `parking`                      | Dataset to process. Choices: `parking`, `kitti`, `malaga`, `polibahn`, `sonneggstrasse` |
+| `--first-frame`  | `-f`  | `0`                            | First frame to process                                                                  |
+| `--last-frame`   | `-l`  | `None`                         | Last frame to process (uses dataset default if not specified)                           |
+| `--output`       | `-o`  | `/workspaces/.../debug_output` | Output directory base path                                                              |
+| `--data-path`    | `-dp` | `/workspaces/.../data`         | Base path to dataset folders                                                            |
+| `--config-path`  | `-cp` | `/workspaces/.../configs`      | Base path to config JSON files                                                          |
+| `--ground-truth` | `-g`  | `False`                        | Plot ground truth trajectory                                                            |
+| `--debug`        |       | `False`                        | Enable debug mode (saves intermediate outputs)                                          |
 
 ### Examples
 ```bash
