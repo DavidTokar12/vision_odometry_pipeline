@@ -1,14 +1,5 @@
 from __future__ import annotations
 
-import os
-
-
-os.environ["PYTHONHASHSEED"] = "0"
-os.environ["OMP_NUM_THREADS"] = "1"
-os.environ["OPENBLAS_NUM_THREADS"] = "1"
-os.environ["MKL_NUM_THREADS"] = "1"
-os.environ["NUMEXPR_NUM_THREADS"] = "1"
-
 import argparse
 import logging
 import os
