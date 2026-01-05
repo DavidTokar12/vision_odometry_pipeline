@@ -48,6 +48,7 @@ class TrackingTestbench:
         history_total = []
         history_tracked = []
         history_rate = []
+        history_error_rate = []
 
         for i in range(len(self.img_files) - 1):
             path0 = self.img_files[i]
@@ -59,9 +60,12 @@ class TrackingTestbench:
             if img0 is None or img1 is None:
                 continue
 
+            img0_proc = img0  # cv2.bilateralFilter(img0, 9, 3, 21)
+            img1_proc = img1  # cv2.bilateralFilter(img1, 9, 3, 21)
+
             # 1. Setup State
             state = VoState()
-            state.image_buffer.update(img0)
+            state.image_buffer.update(img0_proc)
 
             # 2. Run Replenishment on Frame 0
             # This fills state.C (and F, T) with fresh features
@@ -87,7 +91,7 @@ class TrackingTestbench:
             # Buffer now needs [img0, img1]
             # state already has img0. Pushing img1 makes it:
             # prev=img0, curr=img1
-            state.image_buffer.update(img1)
+            state.image_buffer.update(img1_proc)
 
             # 4. Run Tracking
             # process() returns (New_P, New_X, New_ids, New_C, New_F, New_T, Vis)
@@ -100,12 +104,37 @@ class TrackingTestbench:
             total_tracked = len(new_C_tracked)
             track_rate = (total_tracked / total_input) if total_input > 0 else 0.0
 
+            inlier_count = 0
+            outlier_count = 0
+            error_rate = 0.0
+            inlier_mask = np.zeros(total_tracked, dtype=np.uint8)
+
+            if total_tracked >= 8:
+                p1 = np.float32(new_F_tracked)
+                p2 = np.float32(new_C_tracked)
+
+                # RANSAC to find the Fundamental Matrix
+                # 3.0 pixel threshold is standard for KLT
+                _, mask = cv2.findFundamentalMat(p1, p2, cv2.FM_RANSAC, 3.0, 0.99)
+
+                if mask is not None:
+                    inlier_mask = mask.ravel()
+                    inlier_count = np.sum(inlier_mask)
+
+                # The "Error" is the number of points the tracker kept,
+                # but which violate the geometric constraint.
+                outlier_count = total_tracked - inlier_count
+
+                if total_tracked > 0:
+                    error_rate = outlier_count / total_tracked
+
+            history_error_rate.append(error_rate)
             history_total.append(total_input)
             history_tracked.append(total_tracked)
             history_rate.append(track_rate)
 
             # 6. Visualize
-            vis = cv2.cvtColor(img1, cv2.COLOR_GRAY2BGR)
+            vis = cv2.cvtColor(img1_proc, cv2.COLOR_GRAY2BGR)
 
             # Draw Failures (Red)
             # All initial points
@@ -121,34 +150,53 @@ class TrackingTestbench:
                     cv2.circle(vis, p_end, 2, (0, 255, 0), -1)
 
             # Text Info
-            cv2.rectangle(vis, (0, 0), (vis.shape[1], 60), (0, 0, 0), -1)
+
+            # Text Info
+            cv2.rectangle(vis, (0, 0), (vis.shape[1], 80), (0, 0, 0), -1)
             font = cv2.FONT_HERSHEY_SIMPLEX
 
-            l1 = f"Frame {i} -> {i + 1}"
-            l2 = f"Input: {total_input} | Tracked: {total_tracked}"
-            l3 = f"Success Rate: {track_rate * 100:.1f}%"
+            # Line 1: Frame Info
+            cv2.putText(
+                vis, f"Frame {i} -> {i + 1}", (10, 20), font, 0.5, (255, 255, 255), 1
+            )
 
-            cv2.putText(vis, l1, (10, 18), font, 0.5, (255, 255, 255), 1)
-            cv2.putText(vis, l2, (10, 36), font, 0.5, (255, 255, 255), 1)
+            # Line 2: The Tracker's Claim (Raw quantity)
+            # "I tracked 150 points"
             cv2.putText(
                 vis,
-                l3,
-                (10, 54),
+                f"Tracker Claims: {total_tracked} pts",
+                (10, 40),
                 font,
                 0.5,
-                (0, 255, 0) if track_rate > 0.9 else (0, 255, 255),
+                (255, 255, 255),
                 1,
             )
+
+            # Line 3: The Geometric Reality (Quality)
+            # "Only 140 were valid, 10 were wrong"
+            color_err = (
+                (0, 255, 0) if error_rate < 0.05 else (0, 0, 255)
+            )  # Red if error > 5%
+
+            label_stats = f"Valid: {inlier_count} | Errors: {outlier_count}"
+            label_rate = f"Error Rate: {error_rate * 100:.1f}%"
+
+            cv2.putText(vis, label_stats, (10, 60), font, 0.5, (255, 255, 255), 1)
+            cv2.putText(vis, label_rate, (10, 80), font, 0.5, color_err, 1)
 
             # Save
             out_name = os.path.join(self.output_folder, f"tracking_{i:04d}.png")
             cv2.imwrite(out_name, vis)
             print(f"Base frame: {i}, Rate: {track_rate * 100:.1f}%", end="\r")
 
-        self.plot_results(history_total, history_tracked, history_rate)
-        self.print_summary(history_total, history_tracked, history_rate)
+        self.plot_results(
+            history_total, history_tracked, history_rate, history_error_rate
+        )
+        self.print_summary(
+            history_total, history_tracked, history_rate, history_error_rate
+        )
 
-    def plot_results(self, total, tracked, rate):
+    def plot_results(self, total, tracked, rate, err_rate):
         """Plots tracking performance over frames."""
         frames = range(len(total))
         _, (ax1, ax2) = plt.subplots(2, 1, figsize=(10, 8), sharex=True)
@@ -163,7 +211,11 @@ class TrackingTestbench:
 
         # Success Rate
         rate_percent = [r * 100 for r in rate]
+        err_percent = [r * 100 for r in err_rate]
         ax2.plot(frames, rate_percent, color="blue", label="Success Rate")
+        ax2.plot(
+            frames, err_percent, color="red", label="Error Rate (Epipolar Constraint)"
+        )
         ax2.axhline(y=95, color="green", linestyle="--", label="95% Threshold")
         ax2.axhline(y=80, color="red", linestyle="--", label="80% Threshold")
         ax2.set_title("Tracking Success Rate (%)")
@@ -178,7 +230,7 @@ class TrackingTestbench:
         print(f"Plot saved to {out_path}")
         plt.close()
 
-    def print_summary(self, h_tot, h_track, h_rate):
+    def print_summary(self, h_tot, h_track, h_rate, h_err):
         if not h_tot:
             print("No data processed.")
             return
@@ -206,6 +258,11 @@ class TrackingTestbench:
             f"{'Success Rate(%)':<15} | {r_avg:<10.1f} | {r_med:<10.1f} | {r_low:<10.1f}"
         )
 
+        e_avg, e_med, e_low = get_stats(h_err, 100.0, invert_bad=True)
+        print(
+            f"{'Error Rate(%)':<15} | {e_avg:<10.1f} | {e_med:<10.1f} | {e_low:<10.1f}"
+        )
+
         print("=" * 65)
         print("\nInterpretation Guide:")
         print("-" * 65)
@@ -222,5 +279,5 @@ if __name__ == "__main__":
     OUTPUT_DIR = "src/testbench/tracking_results"
 
     # Run
-    tb = TrackingTestbench(INPUT_DIR, OUTPUT_DIR, start_frame=0, end_frame=400)
+    tb = TrackingTestbench(INPUT_DIR, OUTPUT_DIR, start_frame=0, end_frame=1000)
     tb.run()

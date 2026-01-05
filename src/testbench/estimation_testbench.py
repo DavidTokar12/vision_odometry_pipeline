@@ -383,5 +383,5 @@ if __name__ == "__main__":
     POSE_FILE = "data/kitti/poses/05.txt"
     OUT_DIR = "src/testbench/estimation_results"
 
-    tb = PoseTestbench(IMG_DIR, POSE_FILE, OUT_DIR, start_frame=0, end_frame=400)
+    tb = PoseTestbench(IMG_DIR, POSE_FILE, OUT_DIR, start_frame=0, end_frame=500)
     tb.run()

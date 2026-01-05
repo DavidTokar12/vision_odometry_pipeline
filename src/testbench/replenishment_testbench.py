@@ -163,7 +163,7 @@ class ReplenishmentTestbench:
 
             # Console Log
             print(
-                f"Frame {f_idx}: {n_features} features, median score:{median_score:.4f}, distribution: {fill_rate * 100:.0f}%",
+                f"Frame {f_idx}: {n_features} features, median score: {median_score:.4f}, distribution: {fill_rate * 100:.0f}%",
                 end="\r",
             )
 
@@ -290,6 +290,6 @@ if __name__ == "__main__":
                 dummy[ry - 2 : ry + 2, rx - 2 : rx + 2] = 255
             cv2.imwrite(os.path.join(INPUT_DIR, f"{i:04d}.png"), dummy)
 
-    tb = ReplenishmentTestbench(INPUT_DIR, OUTPUT_DIR, start_frame=0, end_frame=400)
+    tb = ReplenishmentTestbench(INPUT_DIR, OUTPUT_DIR, start_frame=0, end_frame=1000)
     tb.run()
     print("Done.")

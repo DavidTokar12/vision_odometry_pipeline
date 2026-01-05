@@ -186,13 +186,14 @@ class TriangulationTestbench:
             # Correct Metric: (Tracked + New) - (Tracked) = New
             new_pts = len(full_P) - count_pre_tri
 
+            inv_pose = self._inv_pose(gt_pose_curr)
             repr_err = self.calculate_reprojection_error(
-                full_P, full_X, gt_pose_curr, self.K
+                full_P, full_X, inv_pose, self.K
             )
 
             # Depth Stats (Using T_cw directly)
-            R_cw = gt_pose_curr[:3, :3]
-            t_cw = gt_pose_curr[:3, 3]
+            R_cw = inv_pose[:3, :3]
+            t_cw = inv_pose[:3, 3]
             X_cam = (R_cw @ full_X.T).T + t_cw
             avg_depth = np.mean(X_cam[:, 2]) if len(X_cam) > 0 else 0.0
 
