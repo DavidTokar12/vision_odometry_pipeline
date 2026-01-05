@@ -30,6 +30,7 @@ class ImagePreprocessingStep(VoStep):
         preproc_gamma = False
         preproc_log = False
         preproc_hist = False
+        preproc_bilat = False
 
         if preproc_clahe:
             clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
@@ -59,6 +60,9 @@ class ImagePreprocessingStep(VoStep):
 
         if preproc_hist:
             gray_undistorted = cv2.equalizeHist(gray_undistorted)
+
+        if preproc_bilat:
+            gray_undistorted = cv2.bilateralFilter(gray_undistorted, 15, 15, 15)
 
         if debug:
             return gray_undistorted, gray_undistorted
