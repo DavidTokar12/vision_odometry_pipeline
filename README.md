@@ -1,5 +1,9 @@
 # Vision Odometry Pipeline
 
+## Overview
+
+A monocular visual odometry pipeline implementing two-view initialization, KLT optical flow tracking, RANSAC-PnP pose estimation, landmark triangulation, and local bundle adjustment. Achieves 15-20 FPS on standard datasets (KITTI, Malaga, Parking) and ucstom recordings. Developed for the Vision Algorithms for Mobile Robotics course at UZH, taught by Prof. Davide Scaramuzza.
+
 ## Setup Instructions
 
 ### Prerequisites
@@ -20,90 +24,94 @@ Before getting started, ensure you have the following installed:
 
 The development environment will be ready once the container is open.
 
-### Import Datasets
-1. Download the compressed dataset archive from the course website (https://rpg.ifi.uzh.ch/teaching.html#VAMR).
-2. Create the `data/` directory in the project root.
-3. Move the dataset archive to `data/` and extract it. The dataloader expects the default structure from the archive
+### Dataset Setup
 
-### Debugging
-To isolate the pipeline from the initialization step, precomputed poses can be used for the parking and kitti dataset.
-This option has to be set up manually in the `steps/pipeline_initialization.py` file:
-- Use `CHEATMODE` to enable/disable the option
-- Set `DEBUG_GT_POSES_PATH` to the correct dataset. 
-  - !!! Make sure this path matches the selection in `main.py` !!!
-  - Note that this will override the previous output video. Rename the old video if you want to keep it.
+1. Download the compressed dataset archive from the [course website](https://rpg.ifi.uzh.ch/teaching.html#VAMR)
+2. Create a `data/` directory in the project root
+3. Extract the dataset archive directly into `data/`. Keep the default folder structure from the archive as-is — the dataloader expects this structure.
 
-## Project Tools
+Your directory should look like:
+```
+vision_odometry_pipeline/
+├── data/
+│   ├── parking/
+│   ├── kitti/
+│   └── malaga-urban-dataset-extract-07/
+├── src/
+└── ...
+```
 
-### Package Management: uv
+## Running the Pipeline
 
-This project uses **[uv](https://github.com/astral-sh/uv)** for fast, reliable package management and dependency resolution.
+Run the pipeline using `uv run`:
+```bash
+uv run python ./src/vision_odometry_pipeline/main.py -d kitti
+```
 
-To install dependencies:
+### Command Line Arguments
 
+| Argument | Short | Default | Description |
+|----------|-------|---------|-------------|
+| `--dataset` | `-d` | `parking` | Dataset to process. Choices: `parking`, `kitti`, `malaga`, `polibahn`, `sonneggstrasse` |
+| `--first-frame` | `-f` | `0` | First frame to process |
+| `--last-frame` | `-l` | `None` | Last frame to process (uses dataset default if not specified) |
+| `--output` | `-o` | `/workspaces/.../debug_output` | Output directory base path |
+| `--data-path` | `-dp` | `/workspaces/.../data` | Base path to dataset folders |
+| `--config-path` | `-cp` | `/workspaces/.../configs` | Base path to config JSON files |
+| `--ground-truth` | `-g` | `False` | Plot ground truth trajectory |
+| `--debug` | | `False` | Enable debug mode (saves intermediate outputs) |
+
+### Examples
+```bash
+# Run on parking dataset (default)
+uv run python ./src/vision_odometry_pipeline/main.py
+
+# Run on KITTI dataset
+uv run python ./src/vision_odometry_pipeline/main.py -d kitti
+
+# Run on KITTI with ground truth overlay
+uv run python ./src/vision_odometry_pipeline/main.py -d kitti -g
+
+# Process only frames 100-200
+uv run python ./src/vision_odometry_pipeline/main.py -d kitti -f 100 -l 200
+
+# Enable debug output
+uv run python ./src/vision_odometry_pipeline/main.py -d parking --debug
+```
+
+## Package Management with uv
+
+This project uses **[uv](https://github.com/astral-sh/uv)** for fast, reliable package management.
+
+### Install Dependencies
 ```bash
 uv sync
 ```
 
-To add a new package:
+### Install with Dev Dependencies
+```bash
+uv sync --all-extras
+```
 
+### Add a New Package
 ```bash
 uv add package_name
 ```
 
-### Linting & Formatting: Ruff
-
-This project uses **[Ruff](https://github.com/astral-sh/ruff)** for fast Python linting and code formatting.
-
-Check code quality:
-
+### Run Any Python Command
 ```bash
-ruff check .
+uv run python <script.py>
+uv run pytest
+uv run ruff check .
 ```
 
-Auto-fix issues:
+## Linting & Formatting with Ruff
 
+This project uses **[Ruff](https://github.com/astral-sh/ruff)** for Python linting and formatting.
 ```bash
-ruff check . --fix
+# Check code quality
+uv run ruff check .
+
+# Format code
+uv run ruff format .
 ```
-
-Format code:
-
-```bash
-ruff format .
-```
-
-Check and format in one command:
-
-```bash
-ruff check . --fix && ruff format .
-```
-
-## Running the Project
-
-The main entry point is `src/vision_odometry_pipeline/main.py`:
-
-```bash
-python src/vision_odometry_pipeline/main.py
-```
-
-For interactive development, you can also use the Jupyter notebook at `src/vision_odometry_pipeline/main.ipynb`.
-
-## Development
-
-When working in the dev container:
-
-1. Install dev dependencies:
-   ```bash
-   uv sync --all-extras
-   ```
-
-2. Run linting and formatting before committing:
-   ```bash
-   ruff check . --fix && ruff format .
-   ```
-
-3. Run tests:
-   ```bash
-   pytest
-   ```
