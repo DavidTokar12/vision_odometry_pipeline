@@ -7,7 +7,8 @@ import os
 import pandas as pd
 
 from vision_odometry_pipeline.image_sequence import ImageSequence
-from vision_odometry_pipeline.image_sequence import create_config
+from vision_odometry_pipeline.vo_configs import DatasetConfig
+from vision_odometry_pipeline.vo_configs import load_config
 from vision_odometry_pipeline.vo_recorder import VoRecorder
 from vision_odometry_pipeline.vo_runner_process import VoRunnerProcess
 
@@ -18,6 +19,34 @@ logging.basicConfig(
     format="%(asctime)s | %(levelname)-8s | %(name)s | %(message)s",
     datefmt="%H:%M:%S",
 )
+
+
+DATASET_DEFAULTS = {
+    "parking": {
+        "image_dir": "images",
+        "image_pattern": "img_{:05d}.png",
+        "last_frame": 598,
+        "ground_truth_path": "poses.txt",
+    },
+    "kitti": {
+        "image_dir": "05/image_0",
+        "image_pattern": "{:06d}.png",
+        "last_frame": 2760,
+        "ground_truth_path": "poses.txt",
+    },
+    "malaga": {
+        "image_dir": "images",
+        "image_pattern": "img_{:05d}_left.jpg",
+        "last_frame": 4000,
+        "ground_truth_path": None,
+    },
+    "antonios_phone": {
+        "image_dir": "images",
+        "image_pattern": "img_{:05d}.jpg",
+        "last_frame": 500,
+        "ground_truth_path": None,
+    },
+}
 
 
 def parse_args() -> argparse.Namespace:
@@ -31,7 +60,7 @@ def parse_args() -> argparse.Namespace:
         "--dataset",
         type=str,
         default="parking",
-        choices=["parking", "kitti", "malaga", "polibahn_up", "0", "1", "2", "3"],
+        choices=list(DATASET_DEFAULTS.keys()),
         help="Dataset to process",
     )
     parser.add_argument(
@@ -60,7 +89,14 @@ def parse_args() -> argparse.Namespace:
         "--data-path",
         type=str,
         default="/workspaces/vision_odometry_pipeline/data",
-        help="Output directory base path",
+        help="Base path to dataset folders",
+    )
+    parser.add_argument(
+        "-cp",
+        "--config-path",
+        type=str,
+        default="/workspaces/vision_odometry_pipeline/src/vision_odometry_pipeline/configs",
+        help="Base path to config JSON files",
     )
     parser.add_argument(
         "-g",
@@ -82,41 +118,50 @@ def parse_args() -> argparse.Namespace:
 def main():
     args = parse_args()
 
-    config = create_config(
-        dataset=int(args.dataset) if args.dataset.isdigit() else args.dataset,
-        base_path=args.data_path,
+    defaults = DATASET_DEFAULTS[args.dataset]
+
+    dataset = DatasetConfig(
+        name=args.dataset,
+        data_path=os.path.join(args.data_path, args.dataset),
+        image_dir=defaults["image_dir"],
+        image_pattern=defaults["image_pattern"],
         first_frame=args.first_frame,
-        last_frame=args.last_frame,
-        output=args.output,
+        last_frame=args.last_frame
+        if args.last_frame is not None
+        else defaults["last_frame"],
+        ground_truth_path=defaults["ground_truth_path"],
+        debug_output=os.path.join(args.output, args.dataset),
     )
+
+    config_path = os.path.join(args.config_path, args.dataset, f"{args.dataset}.json")
+    config = load_config(config_path, dataset)
+
     sequence = ImageSequence(config)
 
     first_image = sequence.peek_image()
     if first_image is None:
         raise RuntimeError("Could not load first image")
 
-    video_path = os.path.join(sequence.debug_output, "out.mp4")
+    video_path = os.path.join(config.dataset.debug_output, "out.mp4")
 
     timing_history: list[dict[str, float]] = []
 
     logger.info("Initializing VO Runner Process...")
 
     with VoRunnerProcess(
-        K=sequence.K,
-        D=sequence.D,
+        config=config,
         image_shape=first_image.shape,
         image_dtype=first_image.dtype,
         initial_frame=args.first_frame,
         debug=args.debug,
-        debug_output=sequence.debug_output,
     ) as runner:
         recorder = VoRecorder(
             output_path=video_path, plot_ground_truth=args.ground_truth
         )
 
-        if args.ground_truth and sequence.ground_truth is not None:
-            recorder.set_ground_truth(sequence.ground_truth)
-            logger.info("Ground truth loaded: %d poses", len(sequence.ground_truth))
+        if args.ground_truth and config.ground_truth is not None:
+            recorder.set_ground_truth(config.ground_truth)
+            logger.info("Ground truth loaded: %d poses", len(config.ground_truth))
 
         try:
             for frame_id, image in sequence:
@@ -158,7 +203,7 @@ def main():
         stats["fps"] = 1000 / stats["mean_ms"]
         stats = stats.round(2)
 
-        stats_path = os.path.join(sequence.debug_output, "performance.csv")
+        stats_path = os.path.join(config.dataset.debug_output, "performance.csv")
 
         stats.to_csv(stats_path)
         logger.info("Performance stats saved to %s", stats_path)

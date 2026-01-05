@@ -1,0 +1,78 @@
+{
+    "keypoint_tracking": {
+        "win_size": [
+            15,
+            15
+        ],
+        "max_level": 5,
+        "criteria_max_iter": 100,
+        "criteria_epsilon": 0.01,
+        "bidirectional_error": 1.2,
+        "ransac_threshold": 1,
+        "ransac_iters": 1500
+    },
+    "initialization": {
+        "cheat_mode": false,
+        "debug_gt_poses_path": "data/kitti/poses/05.txt",
+        "lk_win_size": [
+            21,
+            21
+        ],
+        "lk_max_level": 5,
+        "lk_criteria_max_iter": 30,
+        "lk_criteria_epsilon": 0.01,
+        "fb_max_dist": 1,
+        "min_inliers": 100,
+        "ransac_threshold": 0.5,
+        "ransac_prob": 0.999,
+        "min_parallax_angle": 2,
+        "parallax_factor": 0.5,
+        "min_grid_occupancy": 15,
+        "grid_rows": 10,
+        "grid_cols": 10,
+        "tile_rows": 4,
+        "tile_cols": 4,
+        "min_init_features": 15,
+        "n_features": 100,
+        "contrast_threshold": 0.03
+    },
+    "pose_estimation": {
+        "ransac_prob": 0.999,
+        "repr_error": 1.3,
+        "iterations_count": 800,
+        "pnp_flags": 0,
+        "refinement_loss": "huber",
+        "refinement_f_scale": 0.8
+    },
+    "replenishment": {
+        "max_features": 1000,
+        "min_dist": 7,
+        "quality_level": 0.02,
+        "block_size": 3,
+        "mask_radius": 7,
+        "use_harris": false,
+        "harris_k": 0.04,
+        "harris_threshold": 0.2,
+        "grid_rows": 7,
+        "grid_cols": 7,
+        "cell_cap_multiplier": 1,
+        "global_feature_multiplier": 10,
+        "min_feature_factor": 0.8
+    },
+    "triangulation": {
+        "min_pixel_dist": 3,
+        "min_angle_deg": 1.6,
+        "max_depth": 80,
+        "min_depth": 0,
+        "reset_scale": true
+    },
+    "local_bundle_adjustment": {
+        "enable_ba": true,
+        "window_size": 15,
+        "max_nfev": 7,
+        "ftol": 0.001,
+        "loss_function": "huber",
+        "f_scale": 0.8,
+        "max_reproj_error": 3
+    }
+}

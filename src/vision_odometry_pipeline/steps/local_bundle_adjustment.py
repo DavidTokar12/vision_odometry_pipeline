@@ -105,10 +105,10 @@ def _batched_skew_symmetric(v: np.ndarray) -> np.ndarray:
 
 
 class LocalBundleAdjustmentStep(VoStep):
-    def __init__(self, K: np.ndarray):
+    def __init__(self, config: LocalBundleAdjustmentConfig, K: np.ndarray):
         super().__init__("LocalBundleAdjustment")
         self.K = K
-        self.config = LocalBundleAdjustmentConfig()
+        self.config = config
 
         # The sliding window buffer (deque efficiently handles pushes/pops)
         self._window: deque[WindowFrame] = deque(maxlen=self.config.window_size)

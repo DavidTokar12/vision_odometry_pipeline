@@ -1,153 +1,295 @@
-# This config looks somewhat reasonable using the rescaling
+from __future__ import annotations
+
+import json
+import logging
+import os
 
 from dataclasses import dataclass
 
 import cv2
+import numpy as np
+
+from pydantic import BaseModel
+from pydantic import model_validator
 
 
-@dataclass
-class KeypointTrackingConfig:
+logger = logging.getLogger(__name__)
+
+
+# =============================================================================
+# Algorithm Configs
+# =============================================================================
+
+
+class KeypointTrackingConfig(BaseModel):
     """Configuration for KLT Optical Flow tracking."""
 
-    win_size: tuple[int, int] = (15, 15)  # Window size for LK optical flow
-    max_level: int = 5  # Number of pyramid levels
-    # Termination criteria: (Type, Max_Iter, Epsilon)
-    criteria: tuple = (cv2.TERM_CRITERIA_EPS | cv2.TERM_CRITERIA_COUNT, 100, 0.01)
+    win_size: tuple[int, int]
+    max_level: int
+    criteria_max_iter: int
+    criteria_epsilon: float
+    bidirectional_error: float
+    ransac_threshold: float
+    ransac_iters: int
 
-    bidirectional_error: float = (
-        1.2  # Threshold for forward-backward consistency check (pixels)
-    )
+    @property
+    def criteria(self) -> tuple:
+        return (
+            cv2.TERM_CRITERIA_EPS | cv2.TERM_CRITERIA_COUNT,
+            self.criteria_max_iter,
+            self.criteria_epsilon,
+        )
 
-    # --- 8-Point RANSAC ---
-    ransac_threshold: float = 1.0  # Distance threshold from epipolar line
-    ransac_iters: int = 1500  # Number of RANSAC iterations
 
-
-@dataclass
-class InitializationConfig:
+class InitializationConfig(BaseModel):
     """Configuration for the Bootstrapping/Initialization phase."""
 
-    # --- Change Bootstrap Option ---
-    # Set the correct path matching the option in main.py
-    CHEATMODE = False
-    DEBUG_GT_POSES_PATH = "data/parking/poses.txt"
-    # DEBUG_GT_POSES_PATH = "data/kitti/poses/05.txt"
+    cheat_mode: bool
+    debug_gt_poses_path: str
 
-    # --- Tracking during Init ---
-    lk_win_size: tuple[int, int] = (21, 21)
-    lk_max_level: int = 5
-    lk_criteria: tuple = (cv2.TERM_CRITERIA_EPS | cv2.TERM_CRITERIA_COUNT, 30, 0.01)
-    fb_max_dist: float = 1.0  # Stricter consistency check for initialization
+    lk_win_size: tuple[int, int]
+    lk_max_level: int
+    lk_criteria_max_iter: int
+    lk_criteria_epsilon: float
+    fb_max_dist: float
 
-    # --- Geometric Validation ---
-    min_inliers: int = 100  # Minimum valid 3D points to accept initialization
-    ransac_threshold: float = 0.5  # Pixel error threshold for Essential Matrix RANSAC
-    ransac_prob: float = 0.999  # RANSAC confidence
+    min_inliers: int
+    ransac_threshold: float
+    ransac_prob: float
 
-    # --- Parallax / Baseline ---
-    min_parallax_angle: float = 2.0  # Global median parallax angle required (degrees)
-    parallax_factor: float = (
-        0.5  # Multiplier for individual point check (0.5 * min_parallax)
-    )
+    min_parallax_angle: float
+    parallax_factor: float
 
-    # --- Spatial Distribution ---
-    min_grid_occupancy: int = 15  # Minimum number of occupied grid cells
-    grid_rows: int = 10  # Rows for spatial bucket check
-    grid_cols: int = 10  # Cols for spatial bucket check
+    min_grid_occupancy: int
+    grid_rows: int
+    grid_cols: int
 
-    # --- Feature Distriubtion (SIFT Tiling) ---
-    # Used in find_initial_features to force spread
-    tile_rows: int = 4
-    tile_cols: int = 4
-    min_init_features: int = 15  # Hard fail if fewer features found in frame 0
+    tile_rows: int
+    tile_cols: int
+    min_init_features: int
 
-    # --- Feature Detection (SIFT) ---
-    n_features: int = 100  # Target number of features per tile during init
-    contrast_threshold: float = (
-        0.03  # SIFT contrast threshold (lower = more features, less stable)
-    )
+    n_features: int
+    contrast_threshold: float
+
+    @property
+    def lk_criteria(self) -> tuple:
+        return (
+            cv2.TERM_CRITERIA_EPS | cv2.TERM_CRITERIA_COUNT,
+            self.lk_criteria_max_iter,
+            self.lk_criteria_epsilon,
+        )
 
 
-@dataclass
-class PoseEstimationConfig:
+class PoseEstimationConfig(BaseModel):
     """Configuration for PnP and Motion-Only Bundle Adjustment."""
 
-    # --- P3P RANSAC ---
-    ransac_prob: float = 0.999
-    repr_error: float = 1.3  # Max reprojection error for PnP inliers (pixels)
-    iterations_count: int = 800  # Max RANSAC iterations
-    pnp_flags: int = cv2.SOLVEPNP_ITERATIVE  # PnP Method (P3P is fast for minimal sets)
+    ransac_prob: float
+    repr_error: float
+    iterations_count: int
+    pnp_flags: int
 
-    # --- Least Square ----
-    # Robust loss function (linear for errors > f_scale), default is "linear"
-    # Options: 'linear' (default/brittle), 'huber', 'soft_l1', 'cauchy', 'arctan'
-    refinement_loss: str = "huber"
-    # Outlier threshold in pixels. Ignored if loss is 'linear'.
-    refinement_f_scale: float = 0.8
+    refinement_loss: str
+    refinement_f_scale: float
 
 
-@dataclass
-class ReplenishmentConfig:
-    """
-    Parameters for detecting new features to maintain tracking stability.
-    """
+class ReplenishmentConfig(BaseModel):
+    """Parameters for detecting new features to maintain tracking stability."""
 
-    # --- Feature Detection (Shi-Tomasi/Harris) ---
-    max_features: int = 1000  # Target total number of active features in the system
-    min_dist: int = 7  # Minimum pixel distance between features
-    quality_level: float = 0.02  # Corner quality level (0.0 to 1.0)
-    block_size: int = 3  # Block size for corner computation
-    mask_radius: int = (
-        7  # Radius around existing points to mask out (usually same as min_dist)
-    )
-    use_harris: bool = (
-        False  # Use Harris detector instead of Shi-Tomasi (more selective)
-    )
-    harris_k: float = 0.04  # Harris detector free parameter
-    harris_threshold: float = 0.2  # Minimum Harris response (filters weak corners)
+    max_features: int
+    min_dist: int
+    quality_level: float
+    block_size: int
+    mask_radius: int
+    use_harris: bool
+    harris_k: float
+    harris_threshold: float
 
-    # --- Spatial Distribution (Bucketing) ---
-    grid_rows: int = 7
-    grid_cols: int = 7
+    grid_rows: int
+    grid_cols: int
 
-    cell_cap_multiplier = 1.0
-    global_feature_multiplier = 10
-
-    min_feature_factor = 0.8
+    cell_cap_multiplier: float
+    global_feature_multiplier: float
+    min_feature_factor: float
 
 
-@dataclass
-class TriangulationConfig:
+class TriangulationConfig(BaseModel):
     """Configuration for mapping 2D points to 3D."""
 
-    # --- Candidate Selection ---
-    min_pixel_dist: float = (
-        3.0  # Min pixel displacement before attempting triangulation
-    )
+    min_pixel_dist: float
+    min_angle_deg: float
+    max_depth: float
+    min_depth: float
+    reset_scale: bool
 
-    # --- Geometric Filtering ---
-    min_angle_deg: float = 1.5  # Minimum triangulation angle (degrees)
-    max_depth: float = 80.0  # Maximum allowed depth (meters) to prevent unstable points
-    min_depth: float = 0.0  # Points must be in front of camera
 
-    reset_scale = True
+class LocalBundleAdjustmentConfig(BaseModel):
+    """Configuration for Local Bundle Adjustment."""
+
+    enable_ba: bool
+    window_size: int
+    max_nfev: int
+    ftol: float
+    loss_function: str
+    f_scale: float
+    max_reproj_error: float
+
+
+# =============================================================================
+# Dataset Config (Runtime, not serialized)
+# =============================================================================
 
 
 @dataclass
-class LocalBundleAdjustmentConfig:
-    """Configuration for Local Bundle Adjustment."""
+class DatasetConfig:
+    """Configuration for an image sequence dataset."""
 
-    enable_ba = True
+    name: str
+    data_path: str
+    image_dir: str
+    image_pattern: str
+    first_frame: int
+    last_frame: int
+    ground_truth_path: str | None = None
+    debug_output: str | None = None
 
-    window_size: int = 15  # Number of frames in sliding window
 
-    # Solver constraints
-    max_nfev: int = 7  # Max solver iterations per frame (Speed control)
-    ftol: float = 1e-3  # Convergence tolerance
+# =============================================================================
+# Root Config
+# =============================================================================
 
-    # Outlier rejection
-    loss_function: str = "huber"  # Robust loss
-    f_scale: float = 0.8  # Outlier threshold in pixels
 
-    # Post-optimization cleaning
-    max_reproj_error: float = 3.0  # Points with error > 3.0px after BA are deleted
+class Config(BaseModel):
+    """Root configuration containing all sub-configurations."""
+
+    keypoint_tracking: KeypointTrackingConfig
+    initialization: InitializationConfig
+    pose_estimation: PoseEstimationConfig
+    replenishment: ReplenishmentConfig
+    triangulation: TriangulationConfig
+    local_bundle_adjustment: LocalBundleAdjustmentConfig
+
+    # Runtime fields (not serialized)
+    _dataset: DatasetConfig | None = None
+    _K: np.ndarray | None = None
+    _D: np.ndarray | None = None
+    _ground_truth: np.ndarray | None = None
+
+    model_config = {"arbitrary_types_allowed": True}
+
+    @property
+    def dataset(self) -> DatasetConfig:
+        if self._dataset is None:
+            raise ValueError(
+                "Dataset not set. Use load_config() to load the full config."
+            )
+        return self._dataset
+
+    @property
+    def K(self) -> np.ndarray:
+        if self._K is None:
+            raise ValueError(
+                "K matrix not loaded. Use load_config() to load the full config."
+            )
+        return self._K
+
+    @property
+    def D(self) -> np.ndarray:
+        if self._D is None:
+            return np.zeros(5)
+        return self._D
+
+    @property
+    def ground_truth(self) -> np.ndarray | None:
+        return self._ground_truth
+
+    def get_image_path(self, idx: int) -> str:
+        """Get the full path to an image by index."""
+        filename = self.dataset.image_pattern.format(idx)
+        return os.path.join(self.dataset.data_path, self.dataset.image_dir, filename)
+
+    def to_json(self, path: str) -> None:
+        """Save config to JSON file."""
+        with open(path, "w") as f:
+            json.dump(self.model_dump(), f, indent=2)
+
+
+# =============================================================================
+# Config Loader
+# =============================================================================
+
+
+def _load_matrix(path: str, default: np.ndarray | None = None) -> np.ndarray | None:
+    """Load a matrix from a text file."""
+
+    if not os.path.exists(path):
+        logger.debug("Matrix file not found: %s", path)
+        return default
+
+    with open(path) as f:
+        lines = f.readlines()
+
+    rows = []
+    for line in lines:
+        line = line.strip().rstrip(",")
+        if not line:
+            continue
+        values = [float(v.strip()) for v in line.split(",") if v.strip()]
+        rows.append(values)
+
+    return np.array(rows)
+
+
+def _load_ground_truth(path: str) -> np.ndarray | None:
+    """Load ground truth poses from file."""
+
+    if not os.path.exists(path):
+        logger.debug("Ground truth file not found: %s", path)
+        return None
+
+    full_gt = np.loadtxt(path)
+    gt = full_gt[:, [-9, -1]]
+    logger.debug("Loaded ground truth: %d poses from %s", len(gt), path)
+    return gt
+
+
+def load_config(
+    config_path: str,
+    dataset: DatasetConfig,
+) -> Config:
+    """
+    Load algorithm configuration from JSON and combine with dataset config.
+
+    Args:
+        config_path: Path to the algorithm config JSON file
+        dataset: DatasetConfig with runtime parameters
+
+    Returns:
+        Fully loaded Config object
+    """
+    if not os.path.exists(config_path):
+        raise FileNotFoundError(f"Config file not found: {config_path}")
+
+    with open(config_path) as f:
+        config = Config.model_validate(json.load(f))
+
+    config._dataset = dataset
+
+    config_dir = os.path.dirname(config_path)
+    k_path = os.path.join(config_dir, "K.txt")
+    d_path = os.path.join(config_dir, "D.txt")
+
+    config._K = _load_matrix(k_path)
+    if config._K is None:
+        raise FileNotFoundError(f"Camera matrix K.txt not found in {config_dir}")
+
+    config._D = _load_matrix(d_path, default=np.zeros(5))
+
+    if dataset.ground_truth_path:
+        gt_path = os.path.join(dataset.data_path, dataset.ground_truth_path)
+        config._ground_truth = _load_ground_truth(gt_path)
+
+    logger.info("Loaded config from %s", config_path)
+    logger.debug("Camera matrix K:\n%s", config.K)
+    logger.debug("Distortion coefficients D: %s", config.D)
+
+    return config

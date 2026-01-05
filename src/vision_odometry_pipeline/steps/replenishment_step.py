@@ -9,9 +9,9 @@ from vision_odometry_pipeline.vo_step import VoStep
 
 
 class ReplenishmentStep(VoStep):
-    def __init__(self):
+    def __init__(self, config: ReplenishmentConfig):
         super().__init__("Replenishment")
-        self.config = ReplenishmentConfig()
+        self.config = config
 
     def process(
         self, state: VoState, debug: bool
@@ -68,7 +68,9 @@ class ReplenishmentStep(VoStep):
         candidates = cv2.goodFeaturesToTrack(
             curr_img,
             mask=mask,
-            maxCorners=self.config.max_features * self.config.global_feature_multiplier,
+            maxCorners=int(
+                self.config.max_features * self.config.global_feature_multiplier
+            ),
             qualityLevel=self.config.quality_level,
             minDistance=self.config.min_dist,
             blockSize=self.config.block_size,

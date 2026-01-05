@@ -11,9 +11,9 @@ from vision_odometry_pipeline.vo_step import VoStep
 
 
 class PoseEstimationStep(VoStep):
-    def __init__(self, K: np.ndarray):
+    def __init__(self, config: PoseEstimationConfig, K: np.ndarray):
         super().__init__("PoseEstimation")
-        self.config = PoseEstimationConfig()
+        self.config = config
         self.K = K
 
     def process(

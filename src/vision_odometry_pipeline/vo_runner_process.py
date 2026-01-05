@@ -8,6 +8,13 @@ from multiprocessing import shared_memory
 
 import numpy as np
 
+from vision_odometry_pipeline.vo_configs import InitializationConfig
+from vision_odometry_pipeline.vo_configs import KeypointTrackingConfig
+from vision_odometry_pipeline.vo_configs import LocalBundleAdjustmentConfig
+from vision_odometry_pipeline.vo_configs import PoseEstimationConfig
+from vision_odometry_pipeline.vo_configs import ReplenishmentConfig
+from vision_odometry_pipeline.vo_configs import TriangulationConfig
+
 
 @dataclass
 class VoFrameResult:
@@ -29,13 +36,11 @@ class VoRunnerProcess:
 
     def __init__(
         self,
-        K: np.ndarray,
-        D: np.ndarray,
+        config,  # Config object
         image_shape: tuple[int, int] | tuple[int, int, int],
         image_dtype: np.dtype = np.uint8,
         initial_frame: int = 0,
         debug: bool = False,
-        debug_output: str | None = None,
         num_buffers: int = 2,
     ):
         self.image_shape = image_shape
@@ -53,13 +58,19 @@ class VoRunnerProcess:
         self._pending_count = 0
 
         self._config = {
-            "K": K.copy(),
-            "D": D.copy(),
+            "K": config.K.copy(),
+            "D": config.D.copy(),
             "image_shape": image_shape,
             "image_dtype": self.image_dtype.str,
             "initial_frame": initial_frame,
             "debug": debug,
-            "debug_output": debug_output,
+            "debug_output": config.dataset.debug_output,
+            "keypoint_tracking": config.keypoint_tracking.model_dump(),
+            "initialization": config.initialization.model_dump(),
+            "pose_estimation": config.pose_estimation.model_dump(),
+            "replenishment": config.replenishment.model_dump(),
+            "triangulation": config.triangulation.model_dump(),
+            "local_bundle_adjustment": config.local_bundle_adjustment.model_dump(),
         }
 
         self._started = False
@@ -165,6 +176,24 @@ def _worker_main(
         initial_frame=config["initial_frame"],
         debug=config["debug"],
         debug_output=config["debug_output"],
+        keypoint_tracking_config=KeypointTrackingConfig.model_validate(
+            config["keypoint_tracking"]
+        ),
+        initialization_config=InitializationConfig.model_validate(
+            config["initialization"]
+        ),
+        pose_estimation_config=PoseEstimationConfig.model_validate(
+            config["pose_estimation"]
+        ),
+        replenishment_config=ReplenishmentConfig.model_validate(
+            config["replenishment"]
+        ),
+        triangulation_config=TriangulationConfig.model_validate(
+            config["triangulation"]
+        ),
+        local_bundle_adjustment_config=LocalBundleAdjustmentConfig.model_validate(
+            config["local_bundle_adjustment"]
+        ),
     )
 
     image_shape = config["image_shape"]

@@ -20,6 +20,12 @@ from vision_odometry_pipeline.steps.pose_estimation import PoseEstimationStep
 from vision_odometry_pipeline.steps.preprocessing import ImagePreprocessingStep
 from vision_odometry_pipeline.steps.replenishment_step import ReplenishmentStep
 from vision_odometry_pipeline.steps.triangulation import TriangulationStep
+from vision_odometry_pipeline.vo_configs import InitializationConfig
+from vision_odometry_pipeline.vo_configs import KeypointTrackingConfig
+from vision_odometry_pipeline.vo_configs import LocalBundleAdjustmentConfig
+from vision_odometry_pipeline.vo_configs import PoseEstimationConfig
+from vision_odometry_pipeline.vo_configs import ReplenishmentConfig
+from vision_odometry_pipeline.vo_configs import TriangulationConfig
 from vision_odometry_pipeline.vo_state import VoState
 
 
@@ -33,6 +39,12 @@ class VoRunner:
         K: np.ndarray,
         D: np.ndarray,
         initial_frame: int,
+        keypoint_tracking_config: KeypointTrackingConfig,
+        initialization_config: InitializationConfig,
+        pose_estimation_config: PoseEstimationConfig,
+        replenishment_config: ReplenishmentConfig,
+        triangulation_config: TriangulationConfig,
+        local_bundle_adjustment_config: LocalBundleAdjustmentConfig,
         debug: bool = False,
         debug_output: str | Path | None = None,
     ):
@@ -48,8 +60,17 @@ class VoRunner:
         self._timings: dict[str, list[float]] = {}
         self._frame_idx = initial_frame
 
+        self._keypoint_tracking_config = keypoint_tracking_config
+        self._initialization_config = initialization_config
+        self._pose_estimation_config = pose_estimation_config
+        self._replenishment_config = replenishment_config
+        self._triangulation_config = triangulation_config
+        self._local_bundle_adjustment_config = local_bundle_adjustment_config
+
         # --- Initialization Setup
-        self.pipeline_initialization = PipelineInitialization(K, D)
+        self.pipeline_initialization = PipelineInitialization(
+            config=self._initialization_config, K=K, D=D
+        )
 
         if self._debug and self._debug_out:
             os.makedirs(self._debug_out, exist_ok=True)
@@ -69,11 +90,17 @@ class VoRunner:
 
             # --- Instantiation of Pipeline Steps ---
             self.preproc = ImagePreprocessingStep(map_x, map_y, roi)
-            self.tracker = KeypointTrackingStep()
-            self.pose_est = PoseEstimationStep(K=new_K)
-            self.triangulation = TriangulationStep(K=new_K)
-            self.replenishment = ReplenishmentStep()
-            self.local_ba = LocalBundleAdjustmentStep(K=new_K)
+            self.tracker = KeypointTrackingStep(config=self._keypoint_tracking_config)
+            self.pose_est = PoseEstimationStep(
+                config=self._pose_estimation_config, K=new_K
+            )
+            self.triangulation = TriangulationStep(
+                config=self._triangulation_config, K=new_K
+            )
+            self.replenishment = ReplenishmentStep(config=self._replenishment_config)
+            self.local_ba = LocalBundleAdjustmentStep(
+                config=self._local_bundle_adjustment_config, K=new_K
+            )
 
             # --- Preprocess Image ---
             gray_img, vis_pre = self.preproc.process(image, self._debug)
