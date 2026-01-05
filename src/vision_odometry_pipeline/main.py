@@ -23,28 +23,44 @@ logging.basicConfig(
 
 DATASET_DEFAULTS = {
     "parking": {
+        "source_dir": "parking",
         "image_dir": "images",
         "image_pattern": "img_{:05d}.png",
         "last_frame": 598,
         "ground_truth_path": "poses.txt",
+        "configs": "parking",
     },
     "kitti": {
+        "source_dir": "kitti",
         "image_dir": "05/image_0",
         "image_pattern": "{:06d}.png",
         "last_frame": 2760,
-        "ground_truth_path": "poses.txt",
+        "ground_truth_path": "poses/05.txt",
+        "configs": "kitti",
     },
     "malaga": {
-        "image_dir": "images",
-        "image_pattern": "img_{:05d}_left.jpg",
-        "last_frame": 4000,
+        "source_dir": "malaga-urban-dataset-extract-07",
+        "image_dir": "malaga-urban-dataset-extract-07_rectified_800x600_Images",
+        "image_pattern": "*_left.jpg",
+        "last_frame": 2120,
         "ground_truth_path": None,
+        "configs": "malaga",
     },
-    "antonios_phone": {
+    "polibahn": {
+        "source_dir": "polibahn_down",
         "image_dir": "images",
-        "image_pattern": "img_{:05d}.jpg",
-        "last_frame": 500,
+        "image_pattern": "img_{:05d}.png",
+        "last_frame": 1243,
         "ground_truth_path": None,
+        "configs": "antonios_phone",
+    },
+    "sonneggstrasse": {
+        "source_dir": "sonneggstrasse",
+        "image_dir": "images",
+        "image_pattern": "img_{:05d}.png",
+        "last_frame": 837,
+        "ground_truth_path": None,
+        "configs": "antonios_phone",
     },
 }
 
@@ -122,7 +138,7 @@ def main():
 
     dataset = DatasetConfig(
         name=args.dataset,
-        data_path=os.path.join(args.data_path, args.dataset),
+        data_path=os.path.join(args.data_path, defaults["source_dir"]),
         image_dir=defaults["image_dir"],
         image_pattern=defaults["image_pattern"],
         first_frame=args.first_frame,
@@ -133,7 +149,9 @@ def main():
         debug_output=os.path.join(args.output, args.dataset),
     )
 
-    config_path = os.path.join(args.config_path, args.dataset, f"{args.dataset}.json")
+    config_path = os.path.join(
+        args.config_path, defaults["configs"], f"{defaults['configs']}.json"
+    )
     config = load_config(config_path, dataset)
 
     sequence = ImageSequence(config)

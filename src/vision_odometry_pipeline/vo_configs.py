@@ -5,12 +5,12 @@ import logging
 import os
 
 from dataclasses import dataclass
+from glob import glob
 
 import cv2
 import numpy as np
 
 from pydantic import BaseModel
-from pydantic import model_validator
 
 
 logger = logging.getLogger(__name__)
@@ -204,8 +204,13 @@ class Config(BaseModel):
 
     def get_image_path(self, idx: int) -> str:
         """Get the full path to an image by index."""
-        filename = self.dataset.image_pattern.format(idx)
-        return os.path.join(self.dataset.data_path, self.dataset.image_dir, filename)
+        img_dir = os.path.join(self.dataset.data_path, self.dataset.image_dir)
+        if self.dataset.name == "malaga":
+            images = sorted(glob(os.path.join(img_dir, self.dataset.image_pattern)))
+            filename = images[idx]
+        else:
+            filename = self.dataset.image_pattern.format(idx)
+        return os.path.join(img_dir, filename)
 
     def to_json(self, path: str) -> None:
         """Save config to JSON file."""
